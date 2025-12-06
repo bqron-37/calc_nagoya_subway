@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 
+// === 型定義 ===
 type RouteCandidate = {
   route_str: string;
   distance: number;
@@ -16,6 +17,7 @@ type StationData = {
   [lineName: string]: string[];
 };
 
+// 色定義（ライトモードのみ）
 const LINE_COLORS: { [key: string]: string } = {
   "東山線": "bg-yellow-100 border-yellow-300 text-yellow-900",
   "名城線": "bg-purple-100 border-purple-300 text-purple-900",
@@ -42,12 +44,13 @@ export default function Home() {
   const [errorMsg, setErrorMsg] = useState("");
   const [sortMode, setSortMode] = useState<"price" | "transfers">("price");
   const [isLoading, setIsLoading] = useState(false);
-  
-  // ★追加: 選択中の定期券タイプ
   const [fareType, setFareType] = useState("commuter");
 
+  // ★APIのURLを環境変数から取得（なければローカル）
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/stations")
+    fetch(`${apiUrl}/stations`)
       .then((res) => res.json())
       .then((data) => setStationData(data.stations))
       .catch((err) => console.error(err));
@@ -76,10 +79,9 @@ export default function Home() {
     try {
       const params = new URLSearchParams();
       uniqueStops.forEach((st) => params.append("stops", st));
-      // ★追加: 定期券タイプをクエリパラメータに追加
       params.append("type", fareType);
       
-      const res = await fetch(`http://127.0.0.1:8000/calculate?${params.toString()}`);
+      const res = await fetch(`${apiUrl}/calculate?${params.toString()}`);
       const data = await res.json();
       
       if (!res.ok) throw new Error(data.detail || "計算エラー");
@@ -133,7 +135,6 @@ export default function Home() {
           {/* 計算エリア */}
           <div className="mb-8 flex flex-col md:flex-row justify-center items-center gap-4">
             
-            {/* ★追加: 定期券種類の選択プルダウン */}
             <select
               value={fareType}
               onChange={(e) => setFareType(e.target.value)}
