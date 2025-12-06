@@ -4,35 +4,83 @@ import heapq
 import itertools
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Set
-import time
 import collections
 
-# === 1. 料金テーブル ===
+# === 1. 料金テーブル定義 ===
+@dataclass
+class FareSet:
+    price_1m: int
+    price_6m: int
+
 @dataclass
 class PriceTable:
     zone_name: str
     max_km: float
-    price_1m: int
-    price_6m: int
+    prices: Dict[str, FareSet] # 種類ごとの料金セット
 
 class SubwayFareCalculator:
     def __init__(self):
+        # 距離区分ごとの料金定義（ここに全種類の料金を登録します）
+        # data source: ユーザー提供データ
         self.fare_rules = [
-            PriceTable("1区",  3.0,  5030, 27170),
-            PriceTable("2区",  7.0,  5500, 29700),
-            PriceTable("3区", 11.0,  5880, 31760),
-            PriceTable("4区", 15.0,  6200, 33480),
-            PriceTable("5区", float('inf'), 6440, 34780)
+            PriceTable("1区", 3.0, {
+                "commuter":       FareSet(8540, 46120), # 通勤
+                "university":     FareSet(5030, 27170), # 大学生
+                "high_school":    FareSet(4440, 23980), # 高校・中学
+                "elementary":     FareSet(2400, 12960), # 小学生以下
+                "disability":     FareSet(4080, 22040), # 割引通勤
+                "disability_stu": FareSet(2400, 12960), # 割引学生
+            }),
+            PriceTable("2区", 7.0, {
+                "commuter":       FareSet(9540, 51520),
+                "university":     FareSet(5500, 29700),
+                "high_school":    FareSet(4830, 26090),
+                "elementary":     FareSet(2630, 14180),
+                "disability":     FareSet(4560, 24600),
+                "disability_stu": FareSet(2630, 14180),
+            }),
+            PriceTable("3区", 11.0, {
+                "commuter":       FareSet(10470, 56540),
+                "university":     FareSet(5880, 31760),
+                "high_school":    FareSet(5140, 27760),
+                "elementary":     FareSet(2810, 15180),
+                "disability":     FareSet(5000, 26980),
+                "disability_stu": FareSet(2810, 15180),
+            }),
+            PriceTable("4区", 15.0, {
+                "commuter":       FareSet(11300, 61020),
+                "university":     FareSet(6200, 33480),
+                "high_school":    FareSet(5370, 29000),
+                "elementary":     FareSet(2960, 15990),
+                "disability":     FareSet(5400, 29140),
+                "disability_stu": FareSet(2960, 15990),
+            }),
+            PriceTable("5区", float('inf'), {
+                "commuter":       FareSet(12060, 65130),
+                "university":     FareSet(6440, 34780),
+                "high_school":    FareSet(5530, 29870),
+                "elementary":     FareSet(3080, 16610),
+                "disability":     FareSet(5760, 31110),
+                "disability_stu": FareSet(3080, 16610),
+            }),
         ]
 
-    def get_fare(self, distance_km: float):
+    def get_fare(self, distance_km: float, fare_type: str):
         dist_rounded = round(distance_km, 1)
         for rule in self.fare_rules:
             if dist_rounded <= rule.max_km:
-                return rule
+                if fare_type in rule.prices:
+                    price_data = rule.prices[fare_type]
+                    return {
+                        "zone": rule.zone_name,
+                        "price_1m": price_data.price_1m,
+                        "price_6m": price_data.price_6m
+                    }
+                else:
+                    return None # 不正なタイプ
         return None
 
-# === 2. 路線データ（駅名変更反映済み） ===
+# === 2. 路線データ ===
 LINE_STATIONS = {
     "東山線": [
         "高畑", "八田", "岩塚", "中村公園", "中村日赤", "本陣", "亀島", "名古屋",
@@ -64,7 +112,6 @@ LINE_STATIONS = {
     ]
 }
 
-# 判別駅
 DISCRIMINATOR_STATIONS = {"大曽根", "金山", "西高蔵", "国際センター", "吹上"}
 
 def get_connecting_line(station1, station2):
@@ -133,8 +180,7 @@ class SubwayNetwork:
         self.add_edge("一社", "上社", 1.1)
         self.add_edge("上社", "本郷", 0.7)
         self.add_edge("本郷", "藤が丘", 1.3)
-        
-        # 桜通線（変更点：中村区役所→太閤通）
+        # 桜通線
         self.add_edge("太閤通", "名古屋", 0.9)
         self.add_edge("名古屋", "国際センター", 0.7)
         self.add_edge("国際センター", "丸の内", 0.8)
@@ -155,8 +201,7 @@ class SubwayNetwork:
         self.add_edge("鳴子北", "相生山", 0.9)
         self.add_edge("相生山", "神沢", 1.4)
         self.add_edge("神沢", "徳重", 0.8)
-        
-        # 名城線（変更点：市役所→名古屋城、伝馬町→熱田神宮伝馬町、神宮西→熱田神宮西）
+        # 名城線
         self.add_edge("金山", "東別院", 0.7)
         self.add_edge("東別院", "上前津", 0.9)
         self.add_edge("上前津", "矢場町", 0.7)
@@ -185,7 +230,6 @@ class SubwayNetwork:
         self.add_edge("熱田神宮伝馬町", "熱田神宮西", 1.0)
         self.add_edge("熱田神宮西", "西高蔵", 0.9)
         self.add_edge("西高蔵", "金山", 1.1)
-        
         # 名港線
         self.add_edge("金山", "日比野", 1.5)
         self.add_edge("日比野", "六番町", 1.1)
@@ -193,7 +237,6 @@ class SubwayNetwork:
         self.add_edge("東海通", "港区役所", 0.8)
         self.add_edge("港区役所", "築地口", 0.8)
         self.add_edge("築地口", "名古屋港", 0.6)
-        
         # 鶴舞線
         self.add_edge("上小田井", "庄内緑地公園", 1.4)
         self.add_edge("庄内緑地公園", "庄内通", 1.3)
@@ -214,7 +257,6 @@ class SubwayNetwork:
         self.add_edge("植田", "原", 0.8)
         self.add_edge("原", "平針", 0.9)
         self.add_edge("平針", "赤池", 1.1)
-        
         # 上飯田線
         self.add_edge("上飯田", "平安通", 0.8)
 
@@ -222,24 +264,18 @@ class SubwayNetwork:
         if start not in self.graph or goal not in self.graph: return []
         queue = [(0.0, start, [start])]
         found_paths = []
-        
         while queue:
             dist, curr, path = heapq.heappop(queue)
-            
             if curr == goal:
                 found_paths.append((dist, path))
                 if len(found_paths) >= max_paths:
                     break
                 continue
-            
             if len(path) > 100: continue
-
             for neighbor, weight in self.graph[curr].items():
                 if neighbor in path: continue 
                 if neighbor in exclude_stations: continue 
-                
                 heapq.heappush(queue, (dist + weight, neighbor, path + [neighbor]))
-        
         return found_paths
 
 # === API ===
@@ -256,7 +292,7 @@ calc = SubwayFareCalculator()
 def get_stations():
     return {"stations": LINE_STATIONS}
 
-def find_routes_recursive(target_stops: List[str], current_index: int, current_path_stations: List[str], current_dist: float, results: List[Dict]):
+def find_routes_recursive(target_stops: List[str], current_index: int, current_path_stations: List[str], current_dist: float, results: List[Dict], fare_type: str):
     if current_index == len(target_stops) - 1:
         if len(current_path_stations) != len(set(current_path_stations)):
             return
@@ -267,8 +303,9 @@ def find_routes_recursive(target_stops: List[str], current_index: int, current_p
         complex_count = calculate_complexity(current_path_stations)
         exceeds = (complex_count > 5)
 
-        fare = calc.get_fare(current_dist)
-        if not fare: return
+        # 料金計算時に種類（fare_type）を渡す
+        fare_info = calc.get_fare(current_dist, fare_type)
+        if not fare_info: return
 
         transfer_stations = set()
         if len(current_path_stations) >= 2:
@@ -295,9 +332,9 @@ def find_routes_recursive(target_stops: List[str], current_index: int, current_p
             "route_points": target_stops,
             "route_str": route_str,
             "distance": round(current_dist, 2),
-            "zone": fare.zone_name,
-            "price_1m": fare.price_1m,
-            "price_6m": fare.price_6m,
+            "zone": fare_info["zone"],
+            "price_1m": fare_info["price_1m"],
+            "price_6m": fare_info["price_6m"],
             "full_path": current_path_stations,
             "transfers": transfers,
             "exceeds_five_station_rule": exceeds
@@ -319,10 +356,13 @@ def find_routes_recursive(target_stops: List[str], current_index: int, current_p
         else:
             new_full_path = current_path_stations + path[1:]
         
-        find_routes_recursive(target_stops, current_index + 1, new_full_path, current_dist + dist, results)
+        find_routes_recursive(target_stops, current_index + 1, new_full_path, current_dist + dist, results, fare_type)
 
 @app.get("/calculate")
-def calculate_fare(stops: List[str] = Query(...)):
+def calculate_fare(
+    stops: List[str] = Query(...),
+    type: str = Query("commuter") # デフォルトは通勤
+):
     if len(stops) < 2:
         raise HTTPException(status_code=400, detail="駅を2つ以上指定してください。")
     
@@ -338,7 +378,7 @@ def calculate_fare(stops: List[str] = Query(...)):
         results_for_perm = []
         
         initial_path = [current_perm_list[0]]
-        find_routes_recursive(current_perm_list, 0, initial_path, 0.0, results_for_perm)
+        find_routes_recursive(current_perm_list, 0, initial_path, 0.0, results_for_perm, type)
 
         for res in results_for_perm:
             route_tuple = tuple(res["full_path"])
