@@ -46,7 +46,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [fareType, setFareType] = useState("commuter");
 
-  // ★APIのURLを環境変数から取得（なければローカル）
+  // APIのURLを環境変数から取得（なければローカル）
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
   useEffect(() => {
