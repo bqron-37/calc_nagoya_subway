@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // === 型定義 ===
 type RouteCandidate = {
@@ -17,7 +17,7 @@ type StationData = {
   [lineName: string]: string[];
 };
 
-// 色定義（ライトモードのみ）
+// 路線ごとのテーマカラー
 const LINE_COLORS: { [key: string]: string } = {
   "東山線": "bg-yellow-100 border-yellow-300 text-yellow-900",
   "名城線": "bg-purple-100 border-purple-300 text-purple-900",
@@ -43,17 +43,43 @@ export default function Home() {
   const [candidates, setCandidates] = useState<RouteCandidate[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
   const [sortMode, setSortMode] = useState<"price" | "transfers">("price");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // 計算中のローディング
   const [fareType, setFareType] = useState("commuter");
 
-  // APIのURLを環境変数から取得（なければローカル）
+  // ★追加: 最初の駅データ取得用のローディング状態
+  const [isStationLoading, setIsStationLoading] = useState(true);
+  const [bootTime, setBootTime] = useState(0.0); // 起動待ち時間計測用
+  const bootTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+  // ★修正: 駅データ取得時の処理
   useEffect(() => {
+    // タイマースタート
+    const startTime = Date.now();
+    bootTimerRef.current = setInterval(() => {
+      setBootTime((Date.now() - startTime) / 1000);
+    }, 100);
+
     fetch(`${apiUrl}/stations`)
       .then((res) => res.json())
-      .then((data) => setStationData(data.stations))
-      .catch((err) => console.error(err));
+      .then((data) => {
+        setStationData(data.stations);
+        setIsStationLoading(false); // 読み込み完了
+      })
+      .catch((err) => {
+        console.error(err);
+        setErrorMsg("サーバーに接続できませんでした。再読み込みしてください。");
+        setIsStationLoading(false);
+      })
+      .finally(() => {
+        // タイマーストップ
+        if (bootTimerRef.current) clearInterval(bootTimerRef.current);
+      });
+
+    return () => {
+      if (bootTimerRef.current) clearInterval(bootTimerRef.current);
+    };
   }, []);
 
   const toggleStation = (stationName: string) => {
@@ -104,12 +130,43 @@ export default function Home() {
     }
   });
 
+  // ★追加: サーバー起動待ち画面（駅データ取得中だけ表示）
+  if (isStationLoading) {
+    return (
+      <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center">
+        {bootTime > 3 ? (
+          // 3秒以上かかっている場合（スリープ中）
+          <div className="bg-white p-8 rounded-lg shadow-lg max-w-md animate-fade-in">
+            <div className="text-5xl mb-4 animate-bounce">😴 ➡ 😲</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">サーバーを起動しています...</h2>
+            <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+              無料サーバーを使用しているため、スリープ状態からの復帰に<br/>
+              <span className="font-bold text-red-500 text-lg">30秒〜1分程度</span><br/>
+              お時間がかかる場合があります。
+            </p>
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
+              <div className="bg-blue-500 h-2 rounded-full animate-pulse w-full"></div>
+            </div>
+            <p className="text-xs text-gray-400 font-mono">経過時間: {bootTime.toFixed(1)}秒</p>
+          </div>
+        ) : (
+          // 3秒以内の場合（通常の読み込み）
+          <div className="flex flex-col items-center">
+            <div className="animate-spin h-10 w-10 border-4 border-blue-200 border-t-blue-600 rounded-full mb-4"></div>
+            <p className="text-gray-600 font-bold">データを読み込んでいます...</p>
+          </div>
+        )}
+      </main>
+    );
+  }
+
+  // === ここから下は通常のメイン画面 ===
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800">
       <div className="max-w-5xl mx-auto space-y-6">
         
         <div className="bg-white p-6 rounded shadow border border-gray-200">
-          <h1 className="text-xl font-bold mb-4 text-gray-700">地下鉄定期ルート検索</h1>
+          <h1 className="text-xl font-bold mb-4 text-gray-700">🚇 地下鉄定期ルート検索</h1>
           
           {/* 選択状況 */}
           <div className="mb-6 p-4 bg-gray-100 rounded border border-gray-300">
@@ -150,14 +207,19 @@ export default function Home() {
             <button 
               onClick={handleCalculate} 
               disabled={isLoading || selectedStops.length < 2}
-              className={`w-full md:w-1/3 py-2 rounded font-bold shadow-sm transition
+              className={`w-full md:w-1/3 py-2 rounded font-bold shadow-sm transition flex justify-center items-center gap-2
                 ${(isLoading || selectedStops.length < 2) 
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
                   : "bg-blue-600 text-white hover:bg-blue-700"
                 }
               `}
             >
-              {isLoading ? "検索中..." : "ルートを検索"}
+              {isLoading ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  検索中...
+                </>
+              ) : "ルートを検索"}
             </button>
           </div>
           {errorMsg && <div className="mt-2 text-center text-red-600 font-bold text-sm">{errorMsg}</div>}
