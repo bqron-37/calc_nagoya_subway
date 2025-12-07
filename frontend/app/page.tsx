@@ -46,14 +46,14 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false); // 計算中のローディング
   const [fareType, setFareType] = useState("commuter");
 
-  // ★追加: 最初の駅データ取得用のローディング状態
+  // 最初の駅データ取得用のローディング状態
   const [isStationLoading, setIsStationLoading] = useState(true);
   const [bootTime, setBootTime] = useState(0.0); // 起動待ち時間計測用
   const bootTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-  // ★修正: 駅データ取得時の処理
+  // 駅データ取得時の処理
   useEffect(() => {
     // タイマースタート
     const startTime = Date.now();
@@ -80,7 +80,7 @@ export default function Home() {
     return () => {
       if (bootTimerRef.current) clearInterval(bootTimerRef.current);
     };
-  }, []);
+  }, [apiUrl]);
 
   const toggleStation = (stationName: string) => {
     if (selectedStops.includes(stationName)) {
@@ -130,19 +130,22 @@ export default function Home() {
     }
   });
 
-  // ★追加: サーバー起動待ち画面（駅データ取得中だけ表示）
+  // サーバー起動待ち画面（駅データ取得中だけ表示）
   if (isStationLoading) {
     return (
       <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center">
         {bootTime > 3 ? (
           // 3秒以上かかっている場合（スリープ中）
           <div className="bg-white p-8 rounded-lg shadow-lg max-w-md animate-fade-in">
-            <div className="text-5xl mb-4 animate-bounce">😴 ➡ 😲</div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">サーバーを起動しています...</h2>
+            <div className="text-2xl font-bold text-red-600 mb-4 animate-pulse">
+              [サーバー起動中]
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">サーバーを起動しています</h2>
             <p className="text-sm text-gray-600 mb-4 leading-relaxed">
               無料サーバーを使用しているため、スリープ状態からの復帰に<br/>
               <span className="font-bold text-red-500 text-lg">30秒〜1分程度</span><br/>
-              お時間がかかる場合があります。
+              お時間がかかる場合があります。<br/>
+              そのままお待ちください。
             </p>
             <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
               <div className="bg-blue-500 h-2 rounded-full animate-pulse w-full"></div>
@@ -166,7 +169,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto space-y-6">
         
         <div className="bg-white p-6 rounded shadow border border-gray-200">
-          <h1 className="text-xl font-bold mb-4 text-gray-700">🚇 地下鉄定期ルート検索</h1>
+          <h1 className="text-xl font-bold mb-4 text-gray-700">地下鉄定期ルート検索</h1>
           
           {/* 選択状況 */}
           <div className="mb-6 p-4 bg-gray-100 rounded border border-gray-300">
@@ -279,7 +282,7 @@ export default function Home() {
               <div key={i} className="bg-white p-4 rounded shadow-sm border border-gray-200">
                 {cand.exceeds_five_station_rule && (
                   <div className="mb-2 bg-yellow-50 text-yellow-800 p-2 rounded text-xs border border-yellow-200">
-                    ⚠️ <strong>注意:</strong> 乗換駅・特定駅の合計が5駅を超えています（窓口確認推奨）
+                    [注意] 乗換駅・特定駅の合計が5駅を超えています（窓口確認推奨）
                   </div>
                 )}
 
