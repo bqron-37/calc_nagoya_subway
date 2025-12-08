@@ -139,7 +139,6 @@ export default function Home() {
           <div className="bg-white p-8 rounded-lg shadow-lg max-w-md animate-fade-in">
             <h2 className="text-xl font-bold text-gray-800 mb-2">サーバーを起動しています</h2>
             <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-              無料サーバーを使用しているため、スリープ状態からの復帰に<br/>
               <span className="font-bold text-red-500 text-lg">30秒〜1分程度</span><br/>
               お時間がかかる場合があります。<br/>
               そのままお待ちください。
