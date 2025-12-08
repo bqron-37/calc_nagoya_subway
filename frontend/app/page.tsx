@@ -137,9 +137,6 @@ export default function Home() {
         {bootTime > 3 ? (
           // 3秒以上かかっている場合（スリープ中）
           <div className="bg-white p-8 rounded-lg shadow-lg max-w-md animate-fade-in">
-            <div className="text-2xl font-bold text-red-600 mb-4 animate-pulse">
-              [サーバー起動中]
-            </div>
             <h2 className="text-xl font-bold text-gray-800 mb-2">サーバーを起動しています</h2>
             <p className="text-sm text-gray-600 mb-4 leading-relaxed">
               無料サーバーを使用しているため、スリープ状態からの復帰に<br/>
@@ -147,10 +144,6 @@ export default function Home() {
               お時間がかかる場合があります。<br/>
               そのままお待ちください。
             </p>
-            <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
-              <div className="bg-blue-500 h-2 rounded-full animate-pulse w-full"></div>
-            </div>
-            <p className="text-xs text-gray-400 font-mono">経過時間: {bootTime.toFixed(1)}秒</p>
           </div>
         ) : (
           // 3秒以内の場合（通常の読み込み）
