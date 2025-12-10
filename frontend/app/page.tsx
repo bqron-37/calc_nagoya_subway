@@ -136,13 +136,19 @@ export default function Home() {
       <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center">
         {bootTime > 3 ? (
           // 3秒以上かかっている場合（スリープ中）
-          <div className="bg-white p-8 rounded-lg shadow-lg max-w-md animate-fade-in">
+          <div className="bg-white p-8 rounded-lg shadow-lg max-w-md animate-fade-in flex flex-col items-center text-center mx-auto">
+            
             <h2 className="text-xl font-bold text-gray-800 mb-2">サーバーを起動しています</h2>
-            <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-              <span className="font-bold text-red-500 text-lg">30秒〜1分程度</span><br/>
+            
+            <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+              <span className="font-bold text-red-500 text-lg">1分程度</span><br/>
               お時間がかかる場合があります。<br/>
-              そのままお待ちください。
+              そのままお待ちください...<br/>
+              すごくすごくかかります...
             </p>
+            {/* スピナー */}
+            <div className="animate-spin h-10 w-10 border-4 border-blue-200 border-t-blue-600 rounded-full"></div>
+
           </div>
         ) : (
           // 3秒以内の場合（通常の読み込み）
