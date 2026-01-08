@@ -115,12 +115,15 @@ export default function Home() {
     }
   };
 
-  // ルートを地図で表示する
-  const showRouteOnMap = (route: string[]) => {
-    setHighlightRoute(route);
-    setViewMode("map");
-    // 画面上部へスクロール
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const [openResultIndex, setOpenResultIndex] = useState<number | null>(null);
+
+  // 指定したインデックスの結果のマップを開閉する
+  const toggleResultMap = (index: number) => {
+    if (openResultIndex === index) {
+      setOpenResultIndex(null);
+    } else {
+      setOpenResultIndex(index);
+    }
   };
 
   const sortedCandidates = [...candidates].sort((a, b) => {
@@ -141,13 +144,13 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 pb-20">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans text-gray-800 dark:text-gray-100 pb-20 transition-colors duration-300">
       <Header />
 
       <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
 
         {/* コントロールエリア */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 md:p-6 space-y-6">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm dark:shadow-xl border border-gray-200 dark:border-gray-700 p-5 md:p-6 space-y-6 transition-colors duration-300">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FareTypeSelector
               fareTypes={FARE_TYPES}
@@ -159,10 +162,10 @@ export default function Home() {
               <button
                 onClick={handleCalculate}
                 disabled={isLoading || selectedStops.length < 2}
-                className={`w-full py-3 rounded-xl font-bold text-white shadow-lg shadow-blue-500/30 transition-all flex justify-center items-center gap-2 transform active:scale-95
+                className={`w-full py-3 rounded-xl font-bold text-white shadow-lg shadow-blue-500/30 dark:shadow-blue-500/20 transition-all flex justify-center items-center gap-2 transform active:scale-95
                   ${(isLoading || selectedStops.length < 2)
-                    ? "bg-gray-300 shadow-none cursor-not-allowed text-gray-500"
-                    : "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600"
+                    ? "bg-gray-300 dark:bg-gray-700 shadow-none cursor-not-allowed text-gray-500 dark:text-gray-500"
+                    : "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 dark:hover:from-blue-500 dark:hover:to-blue-400"
                   }
                 `}
               >
@@ -182,7 +185,7 @@ export default function Home() {
           </div>
 
           {errorMsg && (
-            <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 animate-in slide-in-from-top-2">
+            <div className="bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-200 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 animate-in slide-in-from-top-2 border border-transparent dark:border-red-800">
               <AlertCircle size={18} />
               {errorMsg}
             </div>
@@ -192,12 +195,12 @@ export default function Home() {
 
         {/* 駅選択エリア (タブ切り替え) */}
         <div className="space-y-4">
-          <div className="flex bg-gray-100/50 p-1 rounded-xl w-fit">
+          <div className="flex bg-gray-100/50 dark:bg-gray-800 p-1 rounded-xl w-fit border border-transparent dark:border-gray-700 transition-colors">
             <button
               onClick={() => setViewMode("map")}
               className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${viewMode === "map"
-                ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                 }`}
             >
               路線図から選択
@@ -205,8 +208,8 @@ export default function Home() {
             <button
               onClick={() => setViewMode("list")}
               className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${viewMode === "list"
-                ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                 }`}
             >
               リストから選択
@@ -217,7 +220,7 @@ export default function Home() {
             <InteractiveMap
               selectedStops={selectedStops}
               onToggleStation={toggleStation}
-              highlightPath={highlightRoute}
+              highlightPath={undefined} // 上部は選択専用なのでハイライトしない
             />
           </div>
 
@@ -234,21 +237,21 @@ export default function Home() {
         {/* 結果エリア */}
         {candidates.length > 0 && (
           <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
-              <h2 className="text-xl font-bold text-gray-800">
-                検索結果 <span className="text-blue-600 ml-1">{candidates.length}</span><span className="text-sm font-normal text-gray-500 ml-1">件</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 dark:border-gray-700 pb-4 transition-colors">
+              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">
+                検索結果 <span className="text-blue-600 dark:text-blue-400 ml-1">{candidates.length}</span><span className="text-sm font-normal text-gray-500 dark:text-gray-400 ml-1">件</span>
               </h2>
-              <div className="flex bg-gray-100 p-1 rounded-lg self-start sm:self-auto">
+              <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg self-start sm:self-auto border border-transparent dark:border-gray-700 transition-colors">
                 <button
                   onClick={() => setSortMode("price")}
-                  className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${sortMode === "price" ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${sortMode === "price" ? "bg-white dark:bg-gray-700 text-blue-700 dark:text-blue-400 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     }`}
                 >
                   安い順
                 </button>
                 <button
                   onClick={() => setSortMode("transfers")}
-                  className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${sortMode === "transfers" ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${sortMode === "transfers" ? "bg-white dark:bg-gray-700 text-blue-700 dark:text-blue-400 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     }`}
                 >
                   乗換少ない順
@@ -256,16 +259,45 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
               {sortedCandidates.map((cand, i) => (
-                <ResultCard
-                  key={i}
-                  candidate={cand}
-                  rank={i + 1}
-                  isBestPrice={cand.price_1m === getLowestPrice()}
-                  isLeastTransfers={cand.transfers === getMinTransfers()}
-                  onShowMap={() => showRouteOnMap(cand.full_path)}
-                />
+                <div key={i} className="flex flex-col">
+                  {/* カード部分 (z-indexでマップより上に表示されるようにする) */}
+                  <div className="relative z-10">
+                    <ResultCard
+                      candidate={cand}
+                      rank={i + 1}
+                      isBestPrice={cand.price_1m === getLowestPrice()}
+                      isLeastTransfers={cand.transfers === getMinTransfers()}
+                      isOpen={openResultIndex === i}
+                      onToggle={() => toggleResultMap(i)}
+                    />
+                  </div>
+
+                  {/* アコーディオンマップ部分 */}
+                  <div
+                    className={`overflow-hidden transition-all duration-500 ease-in-out ${openResultIndex === i ? "max-h-[1000px] opacity-100 mt-2" : "max-h-0 opacity-0 mt-0"
+                      }`}
+                  >
+                    <div className="pt-2 pb-4">
+                      {/* InteractiveMapを毎回レンダリングすると重いかもしれないが、
+                          アコーディオンが開いている時のみ中身を表示するようにすれば良いか。
+                          ただしアニメーションさせるならレンダリングは必要。
+                          ここではシンプルに常にレンダリングしておいて隠すか、
+                          あるいは openResultIndex === i のときだけレンダリングするか。
+                          パフォーマンスを考えて index match の時だけにする。*/}
+                      {openResultIndex === i && (
+                        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                          <InteractiveMap
+                            selectedStops={selectedStops}
+                            onToggleStation={() => { }} // 閲覧モードなので操作無効
+                            highlightPath={cand.full_path}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           </div>

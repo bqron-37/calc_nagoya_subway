@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { SpeedInsights } from "@vercel/speed-insights/next"; // ★追加 1
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" suppressHydrationWarning>
       <head>
         {/* AdSenseコード */}
         <Script
@@ -25,10 +26,11 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {children}
-        
-        {/* RES: Real Experience Score */}
-        <SpeedInsights />
+        <Providers>
+          {children}
+          {/* RES: Real Experience Score */}
+          <SpeedInsights />
+        </Providers>
       </body>
     </html>
   );

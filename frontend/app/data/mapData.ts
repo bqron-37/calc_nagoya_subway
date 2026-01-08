@@ -40,7 +40,7 @@ export const STATION_COORDINATES: Record<string, StationCoordinate> = {
     "上前津": { x: 500, y: 520, labelAlign: "left" },  // Hub (鶴舞線)
     "矢場町": { x: 500, y: 460, labelAlign: "left" },
     // 栄 (既出)
-    "久屋大通": { x: 500, y: 340, labelAlign: "left" }, // Hub (桜通線)
+    "久屋大通": { x: 500, y: 340, labelAlign: "right" }, // Hub (桜通線) left -> right
     "名古屋城": { x: 500, y: 280, labelAlign: "left" }, // 市役所
     "名城公園": { x: 540, y: 240, labelAlign: "top" },
     "黒川": { x: 580, y: 240, labelAlign: "top" },
@@ -75,8 +75,8 @@ export const STATION_COORDINATES: Record<string, StationCoordinate> = {
     "六番町": { x: 380, y: 680, labelAlign: "left" },
     "東海通": { x: 380, y: 720, labelAlign: "left" },
     "港区役所": { x: 380, y: 760, labelAlign: "left" },
-    "築地口": { x: 360, y: 790, labelAlign: "left" },
-    "名古屋港": { x: 340, y: 820, labelAlign: "left" },
+    "築地口": { x: 360, y: 800, labelAlign: "left" }, // Y+10 adjusted
+    "名古屋港": { x: 340, y: 840, labelAlign: "left" }, // Y+20 adjusted
 
     // === 鶴舞線 (Blue) === 北西から南東へ
     // 上小田井(200, 100) -> 伏見(440, 400) -> 上前津(500, 520) -> 八事(800, 550) -> 赤池(950, 700)
@@ -84,14 +84,14 @@ export const STATION_COORDINATES: Record<string, StationCoordinate> = {
     "庄内緑地公園": { x: 320, y: 190, labelAlign: "top" },
     "庄内通": { x: 350, y: 230, labelAlign: "right" },
     "浄心": { x: 380, y: 270, labelAlign: "right" },
-    "浅間町": { x: 400, y: 310, labelAlign: "right" },
-    "丸の内": { x: 440, y: 340, labelAlign: "right" },  // Hub (桜通線)
+    "浅間町": { x: 400, y: 310, labelAlign: "left" },
+    "丸の内": { x: 440, y: 340, labelAlign: "top" },  // Hub (桜通線)
     // 伏見 (既出) 
-    "大須観音": { x: 460, y: 460, labelAlign: "right" },
+    "大須観音": { x: 460, y: 460, labelAlign: "left" },
     // 上前津 (既出) 500, 520
     "鶴舞": { x: 560, y: 520, labelAlign: "bottom" },
     "荒畑": { x: 600, y: 520, labelAlign: "bottom" },
-    "御器所": { x: 680, y: 520, labelAlign: "top" },   // Hub (桜通線) 680, 520にしたいが名城線と被らないか確認。今池が680,400なのでOK
+    "御器所": { x: 680, y: 520, labelAlign: "top" },   // Hub (桜通線)
     "川名": { x: 720, y: 530, labelAlign: "bottom" },
     "いりなか": { x: 760, y: 540, labelAlign: "bottom" },
     // 八事 (既出) 800, 550
@@ -105,7 +105,7 @@ export const STATION_COORDINATES: Record<string, StationCoordinate> = {
     // 太閤通 -> 名古屋 -> 丸の内 -> 久屋大通 -> 今池 -> 御器所 -> 新瑞橋 -> 徳重
     "太閤通": { x: 340, y: 460, labelAlign: "bottom" }, // 旧中村区役所
     // 名古屋 (既出: 380, 400) -> 迂回させる
-    "国際センター": { x: 420, y: 360, labelAlign: "top" }, // 名古屋と丸の内の間
+    "国際センター": { x: 410, y: 370, labelAlign: "left" }, // 名古屋と丸の内の間
     // 丸の内 (既出) 440, 340
     // 久屋大通 (既出) 500, 340
     "高岳": { x: 560, y: 340, labelAlign: "top" },
@@ -113,17 +113,19 @@ export const STATION_COORDINATES: Record<string, StationCoordinate> = {
     // 今池 (既出) 680, 400
     "吹上": { x: 680, y: 460, labelAlign: "right" },
     // 御器所 (既出) 680, 520
-    "桜山": { x: 680, y: 580, labelAlign: "right" },
-    "瑞穂区役所": { x: 680, y: 620, labelAlign: "left" },
-    "瑞穂運動場西": { x: 680, y: 680, labelAlign: "left" },
-    // 新瑞橋 (既出: 680, 650) -> 少し位置調整必要かもだが繋ぐ
-    "桜本町": { x: 720, y: 680, labelAlign: "bottom" },
-    "鶴里": { x: 760, y: 680, labelAlign: "bottom" },
-    "野並": { x: 800, y: 680, labelAlign: "bottom" },
-    "鳴子北": { x: 840, y: 680, labelAlign: "bottom" },
-    "相生山": { x: 880, y: 680, labelAlign: "bottom" },
-    "神沢": { x: 920, y: 680, labelAlign: "bottom" },
-    "徳重": { x: 960, y: 680, labelAlign: "bottom" },
+    "桜山": { x: 680, y: 565, labelAlign: "right" }, // Y-15
+    "瑞穂区役所": { x: 680, y: 595, labelAlign: "left" }, // Y-25
+    "瑞穂運動場西": { x: 680, y: 625, labelAlign: "left" }, // Y-55 (調整)
+    // 新瑞橋 (既出: 680, 650) -> ここへ繋ぐ
+
+    // 新瑞橋より東は、鶴舞線(平針Y=680)と重ならないようにY軸を大きく下げる (Y=750ラインへ)
+    "桜本町": { x: 720, y: 750, labelAlign: "bottom" },
+    "鶴里": { x: 760, y: 750, labelAlign: "bottom" },
+    "野並": { x: 800, y: 750, labelAlign: "bottom" },
+    "鳴子北": { x: 840, y: 750, labelAlign: "bottom" },
+    "相生山": { x: 880, y: 750, labelAlign: "bottom" },
+    "神沢": { x: 920, y: 750, labelAlign: "bottom" },
+    "徳重": { x: 960, y: 750, labelAlign: "bottom" },
 
     // === 上飯田線 (Pink) ===
     "上飯田": { x: 660, y: 180, labelAlign: "top" },

@@ -1,5 +1,5 @@
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { STATION_COORDINATES, SUBWAY_LINES } from '../data/mapData';
 import { clsx } from 'clsx';
 import { Check } from 'lucide-react';
@@ -11,6 +11,9 @@ type Props = {
 };
 
 export default function InteractiveMap({ selectedStops, onToggleStation, highlightPath }: Props) {
+    // ホバー中の駅を管理
+    const [hoveredStation, setHoveredStation] = useState<string | null>(null);
+
     // SVGのビューボックス定義
     const width = 1100;
     const height = 900;
@@ -84,92 +87,135 @@ export default function InteractiveMap({ selectedStops, onToggleStation, highlig
                     points={points}
                     fill="none"
                     stroke={line.color}
-                    strokeWidth="12"
+                    strokeWidth="16"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className={clsx("transition-opacity duration-300", highlightPath ? "opacity-30" : "opacity-80")} // ハイライト時は薄くする
+                    className={clsx("transition-all duration-500", highlightPath ? "opacity-20 blur-[1px]" : "opacity-90")} // ハイライト時は他を薄くぼかす
                 />
             );
         });
     }, [highlightPath]);
 
     return (
-        <div className="w-full overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-200">
-            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                <h2 className="font-bold text-gray-800 flex items-center gap-2">
-                    <span className="text-xl">🗺️</span> 路線図
-                    {highlightPath && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full ml-2">ルート表示中</span>}
+        <div className="w-full overflow-hidden bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/50 dark:border-gray-700 ring-1 ring-gray-200/50 dark:ring-white/5 transition-all hover:shadow-2xl hover:shadow-blue-500/10 dark:hover:shadow-blue-900/10">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50/50 to-white/50 dark:from-gray-900/50 dark:to-gray-800/50 flex justify-between items-center backdrop-blur-md transition-colors">
+                <h2 className="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-3">
+                    <div className="p-2 bg-blue-100/50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl text-xl">🗺️</div>
+                    <span className="text-lg tracking-tight">路線図から選択</span>
+                    {highlightPath && (
+                        <span className="text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-3 py-1 rounded-full animate-in fade-in ml-2 shadow-sm border border-red-200 dark:border-red-900/50">
+                            ルート表示中
+                        </span>
+                    )}
                 </h2>
-                <div className="text-xs text-gray-500">
-                    駅をクリック・タップして選択
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-gray-900/80 px-3 py-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700">
+                    駅をクリックして選択
                 </div>
             </div>
 
-            <div className="w-full overflow-x-auto">
-                <div className="min-w-[800px] p-4">
-                    <svg viewBox={viewBox} className="w-full h-auto select-none">
-                        {/* 背景のグリッド（デバッグ用、本番では薄くするか消す） */}
-                        {/* <defs>
-              <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
-                <path d="M 100 0 L 0 0 0 100" fill="none" stroke="gray" strokeWidth="0.5" opacity="0.1"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" /> */}
+            <div className="w-full overflow-x-auto bg-grid-slate-100 dark:bg-gray-900 transition-colors">
+                <div className="min-w-[1000px] p-8 md:p-12">
+                    <svg viewBox={viewBox} className="w-full h-auto select-none overflow-visible">
+                        <defs>
+                            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="4" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                            </filter>
+                            <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feDropShadow dx="2" dy="2" stdDeviation="3" floodOpacity="0.3" />
+                            </filter>
+                        </defs>
 
                         {/* 路線の描画 */}
-                        <g className="filter drop-shadow-sm">
+                        <g style={{ filter: 'url(#shadow)' }}>
                             {lines}
                         </g>
 
-                        {/* ハイライトルートの描画 (路線の手前、駅の後ろ？いや一番手前がいいか) */}
-                        {/* 駅より手前にすると文字が消えるので、路線の直後に描画 */}
+                        {/* ハイライトルートの描画 */}
                         {highlightPolyline}
 
-                        {/* 駅の描画 */}
+                        {/* 駅の描画 (円マーカー) */}
                         {Object.entries(STATION_COORDINATES).map(([name, coord]) => {
                             const isSelected = selectedStops.includes(name);
-                            // ルートに含まれる駅かどうか
                             const isHighlight = highlightPath?.includes(name);
 
                             return (
                                 <g
-                                    key={name}
+                                    key={`station-${name}`}
                                     onClick={() => onToggleStation(name)}
-                                    className="cursor-pointer group hover:opacity-80 transition-all duration-200"
+                                    onMouseEnter={() => setHoveredStation(name)}
+                                    onMouseLeave={() => setHoveredStation(null)}
+                                    className="cursor-pointer group transition-all duration-300 ease-out"
                                 >
-                                    {/* アタリ判定用の透明な円（クリックしやすくする） */}
-                                    <circle cx={coord.x} cy={coord.y} r="20" fill="transparent" />
+                                    {/* アタリ判定用の透明な円 */}
+                                    <circle cx={coord.x} cy={coord.y} r="25" fill="transparent" />
 
-                                    {/* 駅の円 */}
+                                    {/* 駅の円 (背景) */}
+                                    {/* fill属性を削除し、クラスで色を指定 */}
                                     <circle
                                         cx={coord.x}
                                         cy={coord.y}
-                                        r={isSelected || isHighlight ? 10 : 6}
-                                        fill={isSelected ? "#2563eb" : isHighlight ? "white" : "white"}
-                                        stroke={isSelected ? "#ffffff" : isHighlight ? "#ef4444" : "#4b5563"}
-                                        strokeWidth={isSelected ? 3 : isHighlight ? 4 : 2}
-                                        className="transition-all duration-300 ease-out"
+                                        r={isSelected || isHighlight ? 14 : 9}
+                                        className="transition-all duration-300 fill-white dark:fill-gray-900"
+                                        style={{ filter: 'url(#shadow)' }}
+                                    />
+
+                                    {/* 駅の円 (メイン) */}
+                                    <circle
+                                        cx={coord.x}
+                                        cy={coord.y}
+                                        r={isSelected || isHighlight ? 14 : 9}
+                                        strokeWidth={isSelected ? 4 : isHighlight ? 5 : 3}
+                                        className={clsx(
+                                            "transition-colors duration-100",
+                                            isSelected
+                                                ? "fill-blue-500 stroke-white"
+                                                : isHighlight
+                                                    ? "fill-white dark:fill-gray-900 stroke-red-500"
+                                                    : "fill-white dark:fill-gray-900 stroke-gray-500 dark:stroke-gray-400 group-hover:stroke-gray-900 dark:group-hover:stroke-white"
+                                        )}
                                     />
 
                                     {/* 選択時のチェックマーク */}
                                     {isSelected && (
-                                        <foreignObject x={coord.x - 8} y={coord.y - 8} width="16" height="16" className="pointer-events-none">
-                                            <Check size={16} className="text-white" strokeWidth={4} />
+                                        <foreignObject
+                                            x={coord.x - 12}
+                                            y={coord.y - 12}
+                                            width="24"
+                                            height="24"
+                                            className="pointer-events-none"
+                                        >
+                                            <div className="flex items-center justify-center w-full h-full bg-blue-500 rounded-full shadow-lg border-2 border-white">
+                                                <Check size={16} className="text-white" strokeWidth={4} />
+                                            </div>
                                         </foreignObject>
                                     )}
+                                </g>
+                            );
+                        })}
 
-                                    {/* 駅名ラベル */}
+                        {/* 駅名ラベル (最前面レイヤー) */}
+                        {Object.entries(STATION_COORDINATES).map(([name, coord]) => {
+                            const isSelected = selectedStops.includes(name);
+                            const isHighlight = highlightPath?.includes(name);
+                            const isHovered = hoveredStation === name;
+
+                            return (
+                                <g
+                                    key={`label-${name}`}
+                                    className="pointer-events-none"
+                                >
                                     <text
                                         x={coord.x}
                                         y={coord.y}
                                         dy={
-                                            coord.labelAlign === 'top' ? -15 :
-                                                coord.labelAlign === 'bottom' ? 20 :
-                                                    3
+                                            coord.labelAlign === 'top' ? -25 :
+                                                coord.labelAlign === 'bottom' ? 32 :
+                                                    6
                                         }
                                         dx={
-                                            coord.labelAlign === 'left' ? -15 :
-                                                coord.labelAlign === 'right' ? 15 :
+                                            coord.labelAlign === 'left' ? -25 :
+                                                coord.labelAlign === 'right' ? 25 :
                                                     0
                                         }
                                         textAnchor={
@@ -177,12 +223,24 @@ export default function InteractiveMap({ selectedStops, onToggleStation, highlig
                                                 coord.labelAlign === 'right' ? 'start' :
                                                     'middle'
                                         }
+                                        // stroke属性を削除し、クラスで制御
+                                        strokeWidth="5"
+                                        paintOrder="stroke"
                                         className={clsx(
-                                            "text-[10px] sm:text-[12px] font-bold pointer-events-none transition-colors",
-                                            isSelected ? "fill-blue-700 text-lg" : isHighlight ? "fill-red-600" : "fill-gray-700 group-hover:fill-black",
-                                            highlightPath && !isHighlight && !isSelected && "opacity-40" // ハイライト時、他の駅は薄く
+                                            "text-[14px] sm:text-[16px] font-black transition-all duration-200 select-none",
+                                            "stroke-white dark:stroke-gray-900", // 縁取り色
+                                            (isSelected || isHighlight || isHovered)
+                                                ? "opacity-100 z-50 text-[16px] sm:text-[18px]"
+                                                : "opacity-0",
+                                            isSelected
+                                                ? "fill-blue-700 dark:fill-blue-400"
+                                                : isHighlight
+                                                    ? "fill-red-600 dark:fill-red-400"
+                                                    : "fill-gray-900 dark:fill-white"
                                         )}
-                                        style={{ fontWeight: isSelected || isHighlight ? 800 : 500 }}
+                                        style={{
+                                            fontWeight: 900,
+                                        }}
                                     >
                                         {name}
                                     </text>
@@ -193,8 +251,8 @@ export default function InteractiveMap({ selectedStops, onToggleStation, highlig
                 </div>
             </div>
 
-            <div className="px-4 py-2 bg-gray-50 text-center text-xs text-gray-400 border-t border-gray-100">
-                ※ 実際の地形とは異なります（概略図）
+            <div className="px-6 py-3 bg-gray-50/80 dark:bg-gray-800/80 backdrop-blur text-center text-xs font-medium text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700 transition-colors">
+                Map Graphic © 2026 Nagoya Subway Calc
             </div>
         </div>
     );
