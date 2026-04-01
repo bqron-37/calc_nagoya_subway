@@ -1,22 +1,20 @@
 import { RouteCandidate } from "../types";
-import { Clock, RefreshCw, Wallet, Train, ChevronDown, ChevronUp } from "lucide-react";
+import { Clock, RefreshCw, Wallet, Train } from "lucide-react";
 
 type Props = {
     candidate: RouteCandidate;
     rank: number;
     isBestPrice: boolean;
     isLeastTransfers: boolean;
-    isOpen: boolean;
-    onToggle: () => void;
 };
 
-export default function ResultCard({ candidate, rank, isBestPrice, isLeastTransfers, isOpen, onToggle }: Props) {
+export default function ResultCard({ candidate, rank, isBestPrice, isLeastTransfers }: Props) {
     const formatPrice = (price: number) => {
         return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY" }).format(price);
     };
 
     return (
-        <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border transition-all duration-300 overflow-hidden ${isOpen ? "border-blue-300 dark:border-blue-500/50 shadow-md dark:shadow-blue-500/10 ring-1 ring-blue-100 dark:ring-blue-500/20" : "border-gray-200 dark:border-gray-700 hover:border-blue-200 dark:hover:border-blue-500/30"}`}>
+        <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border transition-all duration-300 overflow-hidden border-gray-200 dark:border-gray-700 hover:border-blue-200 dark:hover:border-blue-500/30`}>
             <div className="p-4 sm:p-5">
                 <div className="flex justify-between items-start gap-4">
 
@@ -34,7 +32,7 @@ export default function ResultCard({ candidate, rank, isBestPrice, isLeastTransf
 
                             <div className="flex flex-wrap gap-2">
                                 {isBestPrice && <span className="px-2 py-0.5 text-xs font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-full border border-green-200 dark:border-green-500/30">最安</span>}
-                                {isLeastTransfers && <span className="px-2 py-0.5 text-xs font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full border border-orange-200 dark:border-orange-500/30">乗換なし</span>}
+                                {isLeastTransfers && <span className="px-2 py-0.5 text-xs font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full border border-orange-200 dark:border-orange-500/30">{candidate.transfers === 0 ? "乗換なし" : "乗換最少"}</span>}
                             </div>
                         </div>
 
@@ -48,24 +46,11 @@ export default function ResultCard({ candidate, rank, isBestPrice, isLeastTransf
                                     <RefreshCw size={14} /> 乗換: {candidate.transfers}回
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    <Train size={14} /> 距離: {(candidate.distance / 1000).toFixed(1)}km
+                                    <Train size={14} /> 距離: {candidate.distance.toFixed(1)}km
                                 </div>
                             </div>
                         </div>
                     </div>
-
-                    {/* 右側: トグルボタン */}
-                    <button
-                        onClick={onToggle}
-                        className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg transition-colors min-w-[60px]
-              ${isOpen ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400" : "hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"}
-            `}
-                    >
-                        <div className={`transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`}>
-                            <ChevronDown size={24} strokeWidth={2.5} />
-                        </div>
-                        <span className="text-[10px] font-bold">{isOpen ? "閉じる" : "地図"}</span>
-                    </button>
                 </div>
 
                 {/* 経路詳細（テキスト） */}
