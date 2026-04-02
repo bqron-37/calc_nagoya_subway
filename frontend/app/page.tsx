@@ -51,7 +51,7 @@ export default function Home() {
   const [bootTime, setBootTime] = useState(0.0); // 起動待ち時間計測用
   const bootTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
   // 駅データ取得時の処理
   useEffect(() => {
