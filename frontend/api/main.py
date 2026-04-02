@@ -288,7 +288,7 @@ nw = SubwayNetwork()
 nw.build_nagoya_subway()
 calc = SubwayFareCalculator()
 
-@app.get("/stations")
+@app.get("/api/stations")
 def get_stations():
     return {"stations": LINE_STATIONS}
 
@@ -358,7 +358,7 @@ def find_routes_recursive(target_stops: List[str], current_index: int, current_p
         
         find_routes_recursive(target_stops, current_index + 1, new_full_path, current_dist + dist, results, fare_type)
 
-@app.get("/calculate")
+@app.get("/api/calculate")
 def calculate_fare(
     stops: List[str] = Query(...),
     type: str = Query("commuter") # デフォルトは通勤
