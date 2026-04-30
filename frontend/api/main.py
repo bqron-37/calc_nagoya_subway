@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import heapq
 import itertools
+import time
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Set
 import collections
@@ -288,11 +289,153 @@ nw = SubwayNetwork()
 nw.build_nagoya_subway()
 calc = SubwayFareCalculator()
 
+class SearchLimitReached(Exception):
+    pass
+
 @app.get("/api/stations")
 def get_stations():
     return {"stations": LINE_STATIONS}
 
-def find_routes_recursive(target_stops: List[str], current_index: int, current_path_stations: List[str], current_dist: float, results: List[Dict], fare_type: str):
+def build_route_result(path: List[str], target_stops: List[str], distance: float, fare_type: str):
+    transfers = count_transfers(path)
+    if transfers > 3:
+        return None
+
+    complex_count = calculate_complexity(path)
+    fare_info = calc.get_fare(distance, fare_type)
+    if not fare_info:
+        return None
+
+    transfer_stations = set()
+    if len(path) >= 2:
+        current_line = get_connecting_line(path[0], path[1])
+        for k in range(1, len(path) - 1):
+            next_line = get_connecting_line(path[k], path[k + 1])
+            if current_line != next_line:
+                transfer_stations.add(path[k])
+                current_line = next_line
+
+    display_parts = [path[0]]
+    for station in path[1:-1]:
+        is_user_selected = station in target_stops
+        is_transfer = station in transfer_stations
+        if is_transfer:
+            display_parts.append(f"{station}（乗換）")
+        elif is_user_selected:
+            display_parts.append(station)
+    display_parts.append(path[-1])
+
+    return {
+        "route_points": target_stops,
+        "route_str": " → ".join(display_parts),
+        "distance": round(distance, 2),
+        "zone": fare_info["zone"],
+        "price_1m": fare_info["price_1m"],
+        "price_6m": fare_info["price_6m"],
+        "full_path": path,
+        "transfers": transfers,
+        "exceeds_five_station_rule": complex_count > 5
+    }
+
+def find_routes_by_distance(target_stops: List[str], fare_type: str, max_results: int = 100):
+    target_index = {station: i for i, station in enumerate(target_stops)}
+    all_targets_mask = (1 << len(target_stops)) - 1
+    queue = []
+
+    for station in target_stops:
+        mask = 1 << target_index[station]
+        heapq.heappush(queue, (0.0, station, [station], mask))
+
+    results = []
+    seen_routes_set = set()
+    expansions = 0
+    max_expansions = 200000
+    max_path_length = len(nw.graph)
+
+    while queue and len(results) < max_results and expansions < max_expansions:
+        distance, station, path, mask = heapq.heappop(queue)
+        expansions += 1
+
+        if mask == all_targets_mask:
+            route_tuple = tuple(path)
+            rev_route_tuple = tuple(path[::-1])
+            if route_tuple not in seen_routes_set and rev_route_tuple not in seen_routes_set:
+                result = build_route_result(path, target_stops, distance, fare_type)
+                if result:
+                    seen_routes_set.add(route_tuple)
+                    results.append(result)
+            continue
+
+        if len(path) >= max_path_length:
+            continue
+
+        for neighbor, weight in nw.graph[station].items():
+            if neighbor in path:
+                continue
+            next_mask = mask
+            if neighbor in target_index:
+                next_mask |= 1 << target_index[neighbor]
+            heapq.heappush(queue, (distance + weight, neighbor, path + [neighbor], next_mask))
+
+    return results
+
+def find_routes_exhaustive(target_stops: List[str], fare_type: str, deadline_seconds: float = 8.0, max_results: int = 500):
+    valid_candidates = []
+    seen_routes_set = set()
+    deadline = time.monotonic() + deadline_seconds
+    timed_out = False
+
+    try:
+        for perm in itertools.permutations(target_stops):
+            if time.monotonic() > deadline or len(valid_candidates) >= max_results:
+                timed_out = True
+                break
+
+            current_perm_list = list(perm)
+            results_for_perm = []
+
+            initial_path = [current_perm_list[0]]
+            find_routes_recursive(
+                current_perm_list,
+                0,
+                initial_path,
+                0.0,
+                results_for_perm,
+                fare_type,
+                deadline=deadline,
+                max_results=max_results,
+            )
+
+            for res in results_for_perm:
+                route_tuple = tuple(res["full_path"])
+                rev_route_tuple = tuple(res["full_path"][::-1])
+                if route_tuple in seen_routes_set or rev_route_tuple in seen_routes_set:
+                    continue
+                seen_routes_set.add(route_tuple)
+                valid_candidates.append(res)
+                if len(valid_candidates) >= max_results:
+                    timed_out = True
+                    break
+    except SearchLimitReached:
+        timed_out = True
+
+    return valid_candidates, timed_out
+
+def find_routes_recursive(
+    target_stops: List[str],
+    current_index: int,
+    current_path_stations: List[str],
+    current_dist: float,
+    results: List[Dict],
+    fare_type: str,
+    deadline: Optional[float] = None,
+    max_results: Optional[int] = None
+):
+    if deadline is not None and time.monotonic() > deadline:
+        raise SearchLimitReached()
+    if max_results is not None and len(results) >= max_results:
+        return
+
     if current_index == len(target_stops) - 1:
         if len(current_path_stations) != len(set(current_path_stations)):
             return
@@ -348,48 +491,61 @@ def find_routes_recursive(target_stops: List[str], current_index: int, current_p
     if start_s in exclude: exclude.remove(start_s)
     if next_s in exclude: exclude.remove(next_s)
 
-    candidates = nw.find_all_simple_paths(start_s, next_s, exclude_stations=exclude, max_paths=1000)
+    candidates = nw.find_all_simple_paths(start_s, next_s, exclude_stations=exclude, max_paths=300)
 
     for dist, path in candidates:
+        if deadline is not None and time.monotonic() > deadline:
+            raise SearchLimitReached()
+        if max_results is not None and len(results) >= max_results:
+            break
+
         if len(current_path_stations) == 0:
             new_full_path = path
         else:
             new_full_path = current_path_stations + path[1:]
         
-        find_routes_recursive(target_stops, current_index + 1, new_full_path, current_dist + dist, results, fare_type)
+        find_routes_recursive(
+            target_stops,
+            current_index + 1,
+            new_full_path,
+            current_dist + dist,
+            results,
+            fare_type,
+            deadline=deadline,
+            max_results=max_results,
+        )
 
 @app.get("/api/calculate")
 def calculate_fare(
     stops: List[str] = Query(...),
-    type: str = Query("commuter") # デフォルトは通勤
+    type: str = Query("commuter"), # デフォルトは通勤
+    mode: str = Query("fast")
 ):
     if len(stops) < 2:
         raise HTTPException(status_code=400, detail="駅を2つ以上指定してください。")
     
-    unique_stops = list(set(stops))
+    unique_stops = list(dict.fromkeys(stops))
     if len(unique_stops) < 2:
         raise HTTPException(status_code=400, detail="異なる駅を2つ以上指定してください。")
 
-    valid_candidates = []
-    seen_routes_set = set()
-
-    for perm in itertools.permutations(unique_stops):
-        current_perm_list = list(perm)
-        results_for_perm = []
-        
-        initial_path = [current_perm_list[0]]
-        find_routes_recursive(current_perm_list, 0, initial_path, 0.0, results_for_perm, type)
-
-        for res in results_for_perm:
-            route_tuple = tuple(res["full_path"])
-            rev_route_tuple = tuple(res["full_path"][::-1])
-            if route_tuple in seen_routes_set or rev_route_tuple in seen_routes_set:
-                continue
-            seen_routes_set.add(route_tuple)
-            valid_candidates.append(res)
+    warning = None
+    if mode == "exhaustive":
+        valid_candidates, timed_out = find_routes_exhaustive(unique_stops, type)
+        if timed_out:
+            warning = "網羅検索が上限時間に達したため、見つかった候補のみ表示しています。駅数を減らすか高速検索も試してください。"
+    elif mode == "fast":
+        valid_candidates = find_routes_by_distance(unique_stops, type)
+    else:
+        raise HTTPException(status_code=400, detail="検索方式が不正です。")
 
     if not valid_candidates:
-        raise HTTPException(status_code=400, detail="有効な一筆書きルートが見つかりませんでした。")
+        if mode == "exhaustive" and warning:
+            valid_candidates = find_routes_by_distance(unique_stops, type)
+            warning = "網羅検索が上限時間に達したため、高速検索の候補を表示しています。駅数を減らすと網羅検索が完了しやすくなります。"
+            if not valid_candidates:
+                raise HTTPException(status_code=422, detail="網羅検索が上限時間に達しました。駅数を減らすか高速検索を使ってください。")
+        else:
+            raise HTTPException(status_code=400, detail="有効な一筆書きルートが見つかりませんでした。")
 
     valid_candidates.sort(key=lambda x: x["distance"])
-    return {"candidates": valid_candidates}
+    return {"candidates": valid_candidates, "warning": warning}

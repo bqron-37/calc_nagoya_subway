@@ -17,14 +17,25 @@ type StationData = {
   [lineName: string]: string[];
 };
 
+type WizardStep = "fare" | "stations" | "mode" | "results";
+
 // 路線ごとのテーマカラー
 const LINE_COLORS: { [key: string]: string } = {
-  "東山線": "bg-yellow-100 border-yellow-300 text-yellow-900",
-  "名城線": "bg-purple-100 border-purple-300 text-purple-900",
-  "名港線": "bg-purple-50 border-purple-200 text-purple-800",
-  "鶴舞線": "bg-blue-100 border-blue-300 text-blue-900",
-  "桜通線": "bg-red-100 border-red-300 text-red-900",
-  "上飯田線": "bg-pink-100 border-pink-300 text-pink-900",
+  "東山線": "border-amber-300 bg-amber-50 text-amber-950",
+  "名城線": "border-violet-300 bg-violet-50 text-violet-950",
+  "名港線": "border-indigo-200 bg-indigo-50 text-indigo-950",
+  "鶴舞線": "border-sky-300 bg-sky-50 text-sky-950",
+  "桜通線": "border-rose-300 bg-rose-50 text-rose-950",
+  "上飯田線": "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-950",
+};
+
+const LINE_ROUTE_COLORS: { [key: string]: string } = {
+  "東山線": "#f2c94c",
+  "名城線": "#9b6bd3",
+  "名港線": "#7c83db",
+  "鶴舞線": "#4aa3df",
+  "桜通線": "#e65f6f",
+  "上飯田線": "#d965b5",
 };
 
 // 定期券の種類の定義
@@ -37,14 +48,39 @@ const FARE_TYPES = [
   { id: "disability_stu", label: "割引学生（身体障害者等）" },
 ];
 
+const SEARCH_MODES = [
+  { id: "fast", label: "高速", description: "短い候補を優先して素早く検索します。" },
+  { id: "exhaustive", label: "網羅", description: "漏れを抑えて探します。駅が多いと時間がかかります。" },
+] as const;
+
+const STEP_LABELS: { id: WizardStep; label: string }[] = [
+  { id: "fare", label: "種類" },
+  { id: "stations", label: "駅" },
+  { id: "mode", label: "方式" },
+  { id: "results", label: "結果" },
+];
+
+const getConnectingLine = (stationData: StationData, station1: string, station2: string) => {
+  for (const [lineName, stations] of Object.entries(stationData)) {
+    if (stations.includes(station1) && stations.includes(station2)) {
+      return lineName;
+    }
+  }
+  return "";
+};
+
 export default function Home() {
   const [stationData, setStationData] = useState<StationData>({});
   const [selectedStops, setSelectedStops] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<RouteCandidate[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [warningMsg, setWarningMsg] = useState("");
   const [sortMode, setSortMode] = useState<"price" | "transfers">("price");
   const [isLoading, setIsLoading] = useState(false); // 計算中のローディング
   const [fareType, setFareType] = useState("commuter");
+  const [searchMode, setSearchMode] = useState<"fast" | "exhaustive">("fast");
+  const [currentStep, setCurrentStep] = useState<WizardStep>("fare");
+  const [expandedDiagramIndex, setExpandedDiagramIndex] = useState<number | null>(null); // プルダウン展開状態
 
   // 最初の駅データ取得用のローディング状態
   const [isStationLoading, setIsStationLoading] = useState(true);
@@ -92,6 +128,7 @@ export default function Home() {
 
   const handleCalculate = async () => {
     setErrorMsg("");
+    setWarningMsg("");
     setCandidates([]);
     
     const uniqueStops = Array.from(new Set(selectedStops));
@@ -106,15 +143,24 @@ export default function Home() {
       const params = new URLSearchParams();
       uniqueStops.forEach((st) => params.append("stops", st));
       params.append("type", fareType);
+      params.append("mode", searchMode);
       
       const res = await fetch(`${apiUrl}/calculate?${params.toString()}`);
-      const data = await res.json();
+      const responseText = await res.text();
+      let data: { detail?: string; candidates?: RouteCandidate[]; warning?: string | null } = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(res.ok ? "レスポンスの解析に失敗しました。" : "サーバーでエラーが発生しました。");
+      }
       
       if (!res.ok) throw new Error(data.detail || "計算エラー");
       
-      setCandidates(data.candidates);
-    } catch (err: any) {
-      setErrorMsg(err.message);
+      setCandidates(data.candidates || []);
+      setWarningMsg(data.warning || "");
+      setCurrentStep("results");
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "計算エラー");
     } finally {
       setIsLoading(false);
     }
@@ -130,185 +176,413 @@ export default function Home() {
     }
   });
 
+  const currentStepIndex = STEP_LABELS.findIndex((step) => step.id === currentStep);
+  const selectedFareLabel = FARE_TYPES.find((type) => type.id === fareType)?.label || "";
+  const selectedSearchMode = SEARCH_MODES.find((mode) => mode.id === searchMode);
+
+  const renderRouteDiagram = (candidate: RouteCandidate) => (
+    <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="grid gap-0">
+        {candidate.full_path.map((station, index) => {
+          const nextStation = candidate.full_path[index + 1];
+          const lineName = nextStation ? getConnectingLine(stationData, station, nextStation) : "";
+          const lineColor = LINE_ROUTE_COLORS[lineName] || "#94a3b8";
+          const isSelectedStop = selectedStops.includes(station);
+          const prevLine = index > 0 ? getConnectingLine(stationData, candidate.full_path[index - 1], station) : "";
+          const isTransfer = index > 0 && lineName && prevLine && lineName !== prevLine;
+
+          return (
+            <div key={`${station}-${index}`} className="grid grid-cols-[32px_1fr] gap-x-3">
+              <div className="relative flex flex-col items-center">
+                <div
+                  className={`z-10 grid h-7 w-7 place-items-center rounded-full border-2 bg-white text-[10px] font-bold ${
+                    isSelectedStop ? "border-slate-800 text-slate-900" : "border-slate-300 text-slate-500"
+                  }`}
+                  style={{ boxShadow: `0 0 0 4px ${lineColor}22` }}
+                >
+                  {index + 1}
+                </div>
+                {nextStation && (
+                  <div className="min-h-8 w-1.5 flex-1 rounded-full" style={{ backgroundColor: lineColor }}></div>
+                )}
+              </div>
+
+              <div className={`pb-4 ${nextStation ? "" : "pb-0"}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-sm leading-6 ${isSelectedStop ? "font-bold text-slate-900" : "font-medium text-slate-600"}`}>
+                    {station}
+                  </span>
+                  {isSelectedStop && (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800">
+                      選択駅
+                    </span>
+                  )}
+                  {isTransfer && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                      乗換
+                    </span>
+                  )}
+                </div>
+                {nextStation && (
+                  <div className="mt-1 flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                    <span className="h-1.5 w-6 rounded-full" style={{ backgroundColor: lineColor }}></span>
+                    {lineName || "接続"}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   // サーバー起動待ち画面（駅データ取得中だけ表示）
   if (isStationLoading) {
     return (
-      <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center">
+      <main className="min-h-screen bg-[#f7f8fb] flex flex-col items-center justify-center p-4 text-center">
         {bootTime > 3 ? (
           // 3秒以上かかっている場合（スリープ中）
-          <div className="bg-white p-8 rounded-lg shadow-lg max-w-md animate-fade-in flex flex-col items-center text-center mx-auto">
+          <div className="bg-white p-8 rounded-lg shadow-lg shadow-slate-200/70 max-w-md animate-fade-in flex flex-col items-center text-center mx-auto border border-slate-200">
             
-            <h2 className="text-xl font-bold text-gray-800 mb-2">サーバーを起動しています</h2>
+            <h2 className="text-xl font-bold text-slate-900 mb-2">サーバーを起動しています</h2>
             
-            <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-              <span className="font-bold text-red-500 text-lg">1分程度</span><br/>
+            <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+              <span className="font-bold text-rose-600 text-lg">1分程度</span><br/>
               お時間がかかる場合があります。<br/>
               そのままお待ちください...<br/>
               すごくすごくかかります...
             </p>
             {/* スピナー */}
-            <div className="animate-spin h-10 w-10 border-4 border-blue-200 border-t-blue-600 rounded-full"></div>
+            <div className="animate-spin h-10 w-10 border-4 border-sky-100 border-t-sky-600 rounded-full"></div>
 
           </div>
         ) : (
           // 3秒以内の場合（通常の読み込み）
           <div className="flex flex-col items-center">
-            <div className="animate-spin h-10 w-10 border-4 border-blue-200 border-t-blue-600 rounded-full mb-4"></div>
-            <p className="text-gray-600 font-bold">データを読み込んでいます...</p>
+            <div className="animate-spin h-10 w-10 border-4 border-sky-100 border-t-sky-600 rounded-full mb-4"></div>
+            <p className="text-slate-600 font-bold">データを読み込んでいます...</p>
           </div>
         )}
       </main>
     );
   }
 
-  // === ここから下は通常のメイン画面 ===
   return (
-    <main className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800">
-      <div className="max-w-5xl mx-auto space-y-6">
-        
-        <div className="bg-white p-6 rounded shadow border border-gray-200">
-          <h1 className="text-xl font-bold mb-4 text-gray-700">地下鉄定期ルート検索</h1>
-          
-          {/* 選択状況 */}
-          <div className="mb-6 p-4 bg-gray-100 rounded border border-gray-300">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="text-sm font-bold text-gray-600">選択中の駅 ({selectedStops.length})</h2>
-              {selectedStops.length > 0 && (
-                <button onClick={() => setSelectedStops([])} className="text-xs text-blue-600 hover:underline">
-                  全て解除
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2 min-h-[30px]">
-              {selectedStops.length === 0 && <span className="text-gray-400 text-sm">駅を選択してください</span>}
-              {selectedStops.map((stop) => (
-                <span key={stop} className="bg-white border border-gray-300 text-gray-800 px-2 py-1 rounded text-sm flex items-center gap-2">
-                  {stop}
-                  <button onClick={() => toggleStation(stop)} className="text-gray-400 hover:text-red-500 font-bold">×</button>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* 計算エリア */}
-          <div className="mb-8 flex flex-col md:flex-row justify-center items-center gap-4">
-            
-            <select
-              value={fareType}
-              onChange={(e) => setFareType(e.target.value)}
-              className="w-full md:w-auto p-2 border border-gray-300 rounded font-medium bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-            >
-              {FARE_TYPES.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-
-            <button 
-              onClick={handleCalculate} 
-              disabled={isLoading || selectedStops.length < 2}
-              className={`w-full md:w-1/3 py-2 rounded font-bold shadow-sm transition flex justify-center items-center gap-2
-                ${(isLoading || selectedStops.length < 2) 
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
-                  : "bg-blue-600 text-white hover:bg-blue-700"
-                }
-              `}
-            >
-              {isLoading ? (
-                <>
-                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                  検索中...
-                </>
-              ) : "ルートを検索"}
-            </button>
-          </div>
-          {errorMsg && <div className="mt-2 text-center text-red-600 font-bold text-sm">{errorMsg}</div>}
-
-          {/* 駅一覧 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.keys(stationData).map((lineName) => (
-              <div key={lineName} className={`p-3 rounded border ${LINE_COLORS[lineName] || "bg-gray-50 border-gray-200"}`}>
-                <h3 className="font-bold text-sm mb-2">{lineName}</h3>
-                <div className="flex flex-wrap gap-1">
-                  {stationData[lineName].map((station) => {
-                    const isSelected = selectedStops.includes(station);
-                    return (
-                      <button
-                        key={`${lineName}-${station}`}
-                        onClick={() => toggleStation(station)}
-                        className={`
-                          px-2 py-1 rounded text-xs border transition
-                          ${isSelected 
-                            ? "bg-blue-600 text-white border-blue-600 font-bold" 
-                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                          }
-                        `}
-                      >
-                        {station}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+    <main className="min-h-screen bg-[#f6f7fb] font-sans text-slate-900">
+      <div className="border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-5 md:px-8">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700">Nagoya Subway Pass</p>
+            <h1 className="mt-2 text-2xl font-bold text-slate-950 md:text-3xl">地下鉄定期ルート検索</h1>
+            <p className="mt-2 text-sm text-slate-600">質問に答えて、定期券ルートと料金候補を比較できます。</p>
           </div>
         </div>
+      </div>
 
-        {/* 結果表示 */}
-        {candidates.length > 0 && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center border-b pb-2">
-              <h2 className="text-lg font-bold text-gray-700">検索結果: {candidates.length}件</h2>
-              <div className="text-sm">
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-5 md:px-8 md:py-8">
+        <nav className="grid grid-cols-4 gap-2">
+          {STEP_LABELS.map((step, index) => {
+            const isActive = step.id === currentStep;
+            const isPast = index < currentStepIndex;
+            return (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => setCurrentStep(step.id)}
+                className={`rounded-lg border px-2 py-3 text-center text-xs font-bold transition ${
+                  isActive
+                    ? "border-sky-300 bg-sky-100 text-sky-900"
+                    : isPast
+                      ? "border-teal-200 bg-teal-50 text-teal-800"
+                      : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                <span className="block text-[11px]">STEP {index + 1}</span>
+                {step.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+          {currentStep === "fare" && (
+            <div className="grid gap-6 p-5 md:p-7">
+              <div>
+                <p className="text-sm font-bold text-sky-700">STEP 1</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950">定期券の種類を選んでください</h2>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {FARE_TYPES.map((type) => (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => setFareType(type.id)}
+                    className={`rounded-lg border p-4 text-left text-sm font-bold transition ${
+                      fareType === type.id
+                        ? "border-sky-300 bg-sky-100 text-sky-900 shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50"
+                    }`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end">
                 <button
-                  onClick={() => setSortMode("price")}
-                  className={`px-3 py-1 border rounded-l ${sortMode === "price" ? "bg-gray-200 font-bold" : "bg-white hover:bg-gray-50"}`}
+                  type="button"
+                  onClick={() => setCurrentStep("stations")}
+                  className="rounded-md border border-sky-300 bg-sky-100 px-5 py-2.5 text-sm font-bold text-sky-900 transition hover:bg-sky-200"
                 >
-                  安い順
-                </button>
-                <button
-                  onClick={() => setSortMode("transfers")}
-                  className={`px-3 py-1 border-t border-b border-r rounded-r ${sortMode === "transfers" ? "bg-gray-200 font-bold" : "bg-white hover:bg-gray-50"}`}
-                >
-                  乗換少ない順
+                  次へ
                 </button>
               </div>
             </div>
+          )}
 
-            {sortedCandidates.map((cand, i) => (
-              <div key={i} className="bg-white p-4 rounded shadow-sm border border-gray-200">
-                {cand.exceeds_five_station_rule && (
-                  <div className="mb-2 bg-yellow-50 text-yellow-800 p-2 rounded text-xs border border-yellow-200">
-                    [注意] 乗換駅・特定駅の合計が5駅を超えています（窓口確認推奨）
-                  </div>
+          {currentStep === "stations" && (
+            <div className="grid gap-5 p-5 md:p-7">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-sky-700">STEP 2</p>
+                  <h2 className="mt-2 text-2xl font-bold text-slate-950">定期券に通したい駅を選択してください</h2>
+                  <p className="mt-2 text-sm text-slate-500">異なる駅を2つ以上選ぶと次へ進めます。</p>
+                </div>
+                {selectedStops.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStops([])}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                  >
+                    全て解除
+                  </button>
                 )}
+              </div>
 
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-bold mr-2">候補 {i + 1}</span>
-                    <span className="text-sm text-gray-500">{cand.distance}km / {cand.zone}</span>
+              <div className="flex min-h-12 flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+                {selectedStops.length === 0 && <span className="text-sm font-medium text-slate-400">駅を選択してください</span>}
+                {selectedStops.map((stop) => (
+                  <span key={stop} className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-bold text-slate-800 shadow-sm">
+                    {stop}
+                    <button onClick={() => toggleStation(stop)} className="grid h-5 w-5 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" aria-label={`${stop}を解除`}>×</button>
+                  </span>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {Object.keys(stationData).map((lineName) => (
+                  <div key={lineName} className={`rounded-lg border p-3 ${LINE_COLORS[lineName] || "bg-slate-50 border-slate-200"}`}>
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold">{lineName}</h3>
+                      <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-bold text-slate-500">{stationData[lineName].length}駅</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {stationData[lineName].map((station) => {
+                        const isSelected = selectedStops.includes(station);
+                        return (
+                          <button
+                            key={`${lineName}-${station}`}
+                            onClick={() => toggleStation(station)}
+                            className={`min-h-8 rounded-md border px-2.5 py-1 text-xs font-bold transition ${
+                              isSelected
+                                ? "border-sky-300 bg-sky-100 text-sky-900 shadow-sm"
+                                : "bg-white/90 text-slate-700 border-white/80 hover:border-sky-300 hover:bg-sky-50"
+                            }`}
+                          >
+                            {station}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-xl font-bold text-blue-700">{cand.price_1m.toLocaleString()}円<span className="text-xs text-gray-500 font-normal"> (1ヶ月)</span></div>
-                    <div className="text-xs text-gray-500">6ヶ月: {cand.price_6m.toLocaleString()}円</div>
-                  </div>
-                </div>
-                
-                <div className="text-base font-bold text-gray-800 mb-2">{cand.route_str}</div>
+                ))}
+              </div>
 
-                <div className="bg-gray-50 p-2 rounded border border-gray-100 text-xs text-gray-600 mb-2">
-                  <span className="font-bold">詳細ルート: </span>
-                  {cand.full_path.join(" → ")}
-                </div>
+              <div className="flex justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep("fare")}
+                  className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  戻る
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep("mode")}
+                  disabled={selectedStops.length < 2}
+                  className={`rounded-md px-5 py-2.5 text-sm font-bold transition ${
+                    selectedStops.length < 2
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : "border border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200"
+                  }`}
+                >
+                  次へ
+                </button>
+              </div>
+            </div>
+          )}
 
-                <div className="text-xs font-bold text-gray-600">
-                  乗換回数: {cand.transfers}回
+          {currentStep === "mode" && (
+            <div className="grid gap-6 p-5 md:p-7">
+              <div>
+                <p className="text-sm font-bold text-sky-700">STEP 3</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950">検索方式を選んでください</h2>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {SEARCH_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => setSearchMode(mode.id)}
+                    className={`rounded-lg border p-4 text-left transition ${
+                      searchMode === mode.id
+                        ? mode.id === "fast"
+                          ? "border-sky-300 bg-sky-100 text-sky-900 shadow-sm"
+                          : "border-amber-300 bg-amber-100 text-amber-900 shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="block text-base font-bold">{mode.label}</span>
+                    <span className="mt-2 block text-sm font-medium opacity-80">{mode.description}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                <div className="font-bold text-slate-800">選択内容</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="rounded-full bg-white px-2.5 py-1 font-bold">{selectedFareLabel}</span>
+                  <span className="rounded-full bg-white px-2.5 py-1 font-bold">{selectedStops.length}駅</span>
+                  <span className="rounded-full bg-white px-2.5 py-1 font-bold">{selectedSearchMode?.label}</span>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+
+              {errorMsg && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-center text-sm font-bold text-rose-700">{errorMsg}</div>}
+              {warningMsg && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-center text-sm font-bold text-amber-800">{warningMsg}</div>}
+
+              <div className="flex justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep("stations")}
+                  className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  戻る
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCalculate}
+                  disabled={isLoading || selectedStops.length < 2}
+                  className={`flex min-w-36 items-center justify-center gap-2 rounded-md px-5 py-2.5 text-sm font-bold transition ${
+                    isLoading || selectedStops.length < 2
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : "border border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200"
+                  }`}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-300 border-t-sky-800"></div>
+                      検索中...
+                    </>
+                  ) : "検索する"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {currentStep === "results" && (
+            <div className="grid gap-5 p-5 md:p-7">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-sky-700">STEP 4</p>
+                  <h2 className="mt-2 text-2xl font-bold text-slate-950">検索結果</h2>
+                  <p className="mt-2 text-sm text-slate-500">料金・距離・乗換回数を比較できます。</p>
+                </div>
+                <div className="flex text-sm">
+                  <button
+                    onClick={() => setSortMode("price")}
+                    className={`rounded-l-md border px-3 py-2 font-bold transition ${sortMode === "price" ? "border-sky-300 bg-sky-100 text-sky-900" : "border-slate-300 bg-white text-slate-600 hover:bg-sky-50"}`}
+                  >
+                    安い順
+                  </button>
+                  <button
+                    onClick={() => setSortMode("transfers")}
+                    className={`rounded-r-md border-y border-r px-3 py-2 font-bold transition ${sortMode === "transfers" ? "border-sky-300 bg-sky-100 text-sky-900" : "border-slate-300 bg-white text-slate-600 hover:bg-sky-50"}`}
+                  >
+                    乗換少ない順
+                  </button>
+                </div>
+              </div>
+
+              {warningMsg && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-center text-sm font-bold text-amber-800">{warningMsg}</div>}
+              {errorMsg && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-center text-sm font-bold text-rose-700">{errorMsg}</div>}
+
+              {sortedCandidates.length === 0 && !errorMsg && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">
+                  まだ検索結果がありません。
+                </div>
+              )}
+
+              {sortedCandidates.map((cand, i) => (
+                <article key={i} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 md:p-5">
+                  {cand.exceeds_five_station_rule && (
+                    <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs font-bold text-amber-800">
+                      [注意] 乗換駅・特定駅の合計が5駅を超えています（窓口確認推奨）
+                    </div>
+                  )}
+
+                  <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <span className="mr-2 inline-block rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800">候補 {i + 1}</span>
+                      <span className="text-sm font-bold text-slate-500">{cand.distance}km / {cand.zone} / 乗換 {cand.transfers}回</span>
+                    </div>
+                    <div className="text-left md:text-right">
+                      <div className="text-2xl font-bold text-slate-950">{cand.price_1m.toLocaleString()}円<span className="ml-1 text-xs font-bold text-slate-500">1ヶ月</span></div>
+                      <div className="text-xs font-bold text-slate-500">6ヶ月: {cand.price_6m.toLocaleString()}円</div>
+                    </div>
+                  </div>
+
+                  <div className="mb-3 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold leading-6 text-teal-950 md:text-base">{cand.route_str}</div>
+
+                  <button
+                    type="button"
+                    onClick={() => setExpandedDiagramIndex(expandedDiagramIndex === i ? null : i)}
+                    className="mb-3 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-50 flex items-center justify-between"
+                  >
+                    <span>ルート図を表示</span>
+                    <span className={`transition-transform ${expandedDiagramIndex === i ? "rotate-180" : ""}`}>▼</span>
+                  </button>
+
+                  {expandedDiagramIndex === i && renderRouteDiagram(cand)}
+
+                  <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">乗換回数: {cand.transfers}回</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">距離: {cand.distance}km</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">区分: {cand.zone}</span>
+                  </div>
+                </article>
+              ))}
+
+              <div className="flex flex-wrap justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep("mode")}
+                  className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  条件を変更
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCalculate}
+                  disabled={isLoading}
+                  className="rounded-md border border-sky-300 bg-sky-100 px-5 py-2.5 text-sm font-bold text-sky-900 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                >
+                  再検索
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
