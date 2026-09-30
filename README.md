@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 名古屋市営地下鉄 定期運賃計算ツール
 
-## Getting Started
+名古屋市営地下鉄の複数駅を選択し、一筆書きで巡る有効な定期券ルートの検索と、その定期運賃を自動計算するWebアプリケーションです。
 
-First, run the development server:
+**アプリ: https://calc-nagoya-subway.vercel.app**
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## 主な機能
+
+1. **一筆書きルート探索**
+   - 選択した複数の駅を、同一駅や区間を重複して通過することなく巡るすべての有効な「一筆書きルート」を自動探索します。
+2. **定期運賃の自動計算**
+   - 探索されたルートの合計営業距離（km）に基づき、名古屋市営地下鉄の正規運賃表（1区〜5区）に照らし合わせて定期代（1ヶ月・6ヶ月）を計算します。
+   - 以下の定期券タイプに対応しています：
+     - 通勤定期（一般）
+     - 通学定期（大学生）
+     - 通学定期（高校・中学）
+     - 通学定期（小学生以下）
+     - 割引通勤（身体障害者等）
+     - 割引通学（身体障害者等）
+3. **並べ替え（ソート）機能**
+   - 「安い順（距離が短い順）」および「乗換が少ない順」でルート候補を並べ替えることができます。
+4. **窓口確認推奨ルールの判定**
+   - 乗り換え駅や特定駅の合計数が規定（5駅）を超える複雑なルートについて、注意書き（窓口確認推奨）を自動で表示します。
+5. **検索方式の切り替え**
+   - 「高速」：距離の短い候補から順に探索し、素早く結果を返します。
+   - 「網羅」：駅の並び順をすべて試して探索します。駅が多いと時間がかかるため、制限時間（8秒）を設けています。
+
+---
+
+## 技術スタック
+
+- **フロントエンド**
+  - Next.js (TypeScript, Tailwind CSS, App Router)
+- **バックエンド**
+  - FastAPI (Python 3.13)
+- **ホスティング / デプロイ**
+  - Vercel (Next.jsとPython APIを単一のプロジェクトとしてデプロイ)
+
+---
+
+## プロジェクト構成
+
+```text
+nagoya_subway/
+├── frontend/               # メインアプリケーション（Vercelデプロイ対象）
+│   ├── app/                # Next.js ページコンポーネント (UI)
+│   ├── api/                # FastAPI バックエンド
+│   │   ├── main.py         # 経路探索アルゴリズム・料金計算ロジック
+│   │   └── index.py        # Vercel Serverless Function用のラッパー
+│   ├── public/             # 静的ファイル
+│   ├── next.config.ts      # Next.js 設定ファイル
+│   ├── vercel.json         # Vercel用ルーティング設定
+│   └── requirements.txt    # Python依存ライブラリ
+└── README.md               # 本ドキュメント
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## ローカルでの起動方法
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+本プロジェクトは、フロントエンド（Next.js）とバックエンド（FastAPI）をローカルで別々に起動して開発します。
 
-## Learn More
+### 1. バックエンド（FastAPI）の起動
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# frontend ディレクトリに移動
+cd frontend
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# 必要ライブラリのインストール
+pip install -r requirements.txt
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# FastAPIサーバーの起動 (Uvicorn)
+uvicorn api.main:app --reload
+```
+※ デフォルトでは `http://127.0.0.1:8000` でAPIが起動します。
 
-## Deploy on Vercel
+### 2. フロントエンド（Next.js）の起動
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+# frontend ディレクトリで実行
+npm install
+npm run dev
+```
+※ デフォルトでは `http://localhost:3000` でWebUIが起動します。ローカル開発時は、Next.jsのRewrite機能により `/api/*` へのリクエストが自動的にバックエンド（`http://127.0.0.1:8000`）へ転送されます。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## 免責事項 (Disclaimer)
+
+- 本アプリケーションは**個人が開発した非公式のツール**であり、名古屋市交通局公式とは一切関係ありません。
+- 運賃計算やルート判定には細心の注意を払っておりますが、実際の定期券購入時は購入可否や金額について名古屋市交通局の窓口にて必ず最終確認を行ってください。
