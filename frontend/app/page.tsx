@@ -11,7 +11,25 @@ type RouteCandidate = {
   full_path: string[];
   transfers: number;
   exceeds_five_station_rule: boolean;
+  detour_comparison?: DetourComparison;
 };
+
+type DetourStation = {
+  station: string;
+  on_base_route: boolean;
+  from_station?: string;
+  round_trip_cost?: number;
+  visits_1m?: number;
+  visits_6m?: number;
+};
+
+type DetourComparison = {
+  diff_1m: number;
+  diff_6m: number;
+  stations: DetourStation[];
+};
+
+type StationRole = "base" | "detour";
 
 type StationData = {
   [lineName: string]: string[];
@@ -80,6 +98,9 @@ export default function Home() {
   const [fareType, setFareType] = useState("commuter");
   const [searchMode, setSearchMode] = useState<"fast" | "exhaustive">("fast");
   const [currentStep, setCurrentStep] = useState<WizardStep>("fare");
+  const [detourStops, setDetourStops] = useState<string[]>([]); // 寄り道駅（バイト先・店など）
+  const [stationRole, setStationRole] = useState<StationRole>("base"); // 次に選ぶ駅の役割
+  const [baseRoute, setBaseRoute] = useState<RouteCandidate | null>(null); // 遠回りしないルート
   const [expandedDiagramIndex, setExpandedDiagramIndex] = useState<number | null>(null); // プルダウン展開状態
 
   // 最初の駅データ取得用のローディング状態
@@ -121,19 +142,36 @@ export default function Home() {
   const toggleStation = (stationName: string) => {
     if (selectedStops.includes(stationName)) {
       setSelectedStops(selectedStops.filter((s) => s !== stationName));
+      setDetourStops(detourStops.filter((s) => s !== stationName));
     } else {
       setSelectedStops([...selectedStops, stationName]);
+      if (stationRole === "detour") setDetourStops([...detourStops, stationName]);
     }
   };
+
+  const toggleStationRole = (stationName: string) => {
+    if (detourStops.includes(stationName)) {
+      setDetourStops(detourStops.filter((s) => s !== stationName));
+    } else {
+      setDetourStops([...detourStops, stationName]);
+    }
+  };
+
+  const baseStopCount = selectedStops.filter((s) => !detourStops.includes(s)).length;
 
   const handleCalculate = async () => {
     setErrorMsg("");
     setWarningMsg("");
     setCandidates([]);
+    setBaseRoute(null);
     
     const uniqueStops = Array.from(new Set(selectedStops));
     if (uniqueStops.length < 2) {
       setErrorMsg("異なる駅を2つ以上選んでください");
+      return;
+    }
+    if (baseStopCount < 2) {
+      setErrorMsg("家・大学などの必須駅を2つ以上選んでください");
       return;
     }
 
@@ -144,10 +182,16 @@ export default function Home() {
       uniqueStops.forEach((st) => params.append("stops", st));
       params.append("type", fareType);
       params.append("mode", searchMode);
+      detourStops.forEach((st) => params.append("detour", st));
       
       const res = await fetch(`${apiUrl}/calculate?${params.toString()}`);
       const responseText = await res.text();
-      let data: { detail?: string; candidates?: RouteCandidate[]; warning?: string | null } = {};
+      let data: {
+        detail?: string;
+        candidates?: RouteCandidate[];
+        warning?: string | null;
+        base_route?: RouteCandidate | null;
+      } = {};
       try {
         data = responseText ? JSON.parse(responseText) : {};
       } catch {
@@ -158,6 +202,7 @@ export default function Home() {
       
       setCandidates(data.candidates || []);
       setWarningMsg(data.warning || "");
+      setBaseRoute(data.base_route || null);
       setCurrentStep("results");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : "計算エラー");
@@ -179,6 +224,61 @@ export default function Home() {
   const currentStepIndex = STEP_LABELS.findIndex((step) => step.id === currentStep);
   const selectedFareLabel = FARE_TYPES.find((type) => type.id === fareType)?.label || "";
   const selectedSearchMode = SEARCH_MODES.find((mode) => mode.id === searchMode);
+
+  const formatDiff = (diff: number) => `${diff > 0 ? "+" : ""}${diff.toLocaleString()}円`;
+
+  const renderDetourComparison = (comparison: DetourComparison) => {
+    const isFree = comparison.diff_1m <= 0 && comparison.diff_6m <= 0;
+    // 乗り越しが必要な寄り道駅のうち、お得になるまでの回数が最大の駅（＝一番控えめな目安）
+    const worstStation = comparison.stations
+      .filter((st) => !st.on_base_route)
+      .reduce<DetourStation | null>(
+        (worst, st) =>
+          !worst || (st.visits_1m ?? 0) > (worst.visits_1m ?? 0) || (st.visits_6m ?? 0) > (worst.visits_6m ?? 0)
+            ? st
+            : worst,
+        null
+      );
+
+    return (
+      <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+        <div className="text-xs font-bold text-emerald-800">遠回りしないルートとの比較</div>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-bold">
+          <span>1ヶ月: {formatDiff(comparison.diff_1m)}</span>
+          <span>6ヶ月: {formatDiff(comparison.diff_6m)}</span>
+        </div>
+        {isFree ? (
+          <p className="mt-2 font-bold">定期代が増えないので、寄り道駅を通すほうがお得です。</p>
+        ) : !worstStation ? (
+          <p className="mt-2 font-bold">寄り道駅はすべて遠回りしないルート上にあるため、遠回りする必要はありません。</p>
+        ) : (
+          <div className="mt-2 rounded-md bg-white/80 px-3 py-2">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {[
+                { label: "1ヶ月定期", visits: worstStation.visits_1m },
+                { label: "6ヶ月定期", visits: worstStation.visits_6m },
+              ].map((row) => (
+                <span key={row.label}>
+                  {row.label}なら
+                  {row.visits ? (
+                    <>
+                      <span className="text-lg font-bold">月{row.visits}回</span>以上追加した駅で降りればお得
+                    </>
+                  ) : (
+                    <span className="font-bold">差額なしで常にお得</span>
+                  )}
+                </span>
+              ))}
+            </div>
+            <div className="mt-1 text-xs text-slate-600">
+              回数が一番多くなる{worstStation.station}で計算（遠回りしない定期だと{worstStation.from_station}から乗り越し 往復
+              {worstStation.round_trip_cost?.toLocaleString()}円）
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderRouteDiagram = (candidate: RouteCandidate) => (
     <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -346,12 +446,15 @@ export default function Home() {
                 <div>
                   <p className="text-sm font-bold text-sky-700">STEP 2</p>
                   <h2 className="mt-2 text-2xl font-bold text-slate-950">定期券に通したい駅を選択してください</h2>
-                  <p className="mt-2 text-sm text-slate-500">異なる駅を2つ以上選ぶと次へ進めます。</p>
+                  <p className="mt-2 text-sm text-slate-500">家・大学などの必須駅を2つ以上選ぶと次へ進めます。</p>
                 </div>
                 {selectedStops.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setSelectedStops([])}
+                    onClick={() => {
+                      setSelectedStops([]);
+                      setDetourStops([]);
+                    }}
                     className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
                   >
                     全て解除
@@ -359,10 +462,46 @@ export default function Home() {
                 )}
               </div>
 
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-sm font-bold text-slate-800">これから選ぶ駅の役割</div>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {([
+                    { id: "base", label: "家・大学（必須）", description: "遠回りしないルートにも入れる駅" },
+                    { id: "detour", label: "寄り道駅", description: "バイト先・店が多い駅など、遠回りして通したい駅" },
+                  ] as const).map((role) => (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => setStationRole(role.id)}
+                      className={`rounded-md border p-3 text-left transition ${
+                        stationRole === role.id
+                          ? role.id === "base"
+                            ? "border-sky-300 bg-sky-100 text-sky-900 shadow-sm"
+                            : "border-amber-300 bg-amber-100 text-amber-900 shadow-sm"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="block text-sm font-bold">{role.label}</span>
+                      <span className="mt-1 block text-xs font-medium opacity-80">{role.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="flex min-h-12 flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
                 {selectedStops.length === 0 && <span className="text-sm font-medium text-slate-400">駅を選択してください</span>}
                 {selectedStops.map((stop) => (
                   <span key={stop} className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-bold text-slate-800 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => toggleStationRole(stop)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        detourStops.includes(stop) ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-sky-800"
+                      }`}
+                      title="クリックで役割を切り替え"
+                    >
+                      {detourStops.includes(stop) ? "寄り道" : "必須"}
+                    </button>
                     {stop}
                     <button onClick={() => toggleStation(stop)} className="grid h-5 w-5 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" aria-label={`${stop}を解除`}>×</button>
                   </span>
@@ -379,13 +518,16 @@ export default function Home() {
                     <div className="flex flex-wrap gap-1.5">
                       {stationData[lineName].map((station) => {
                         const isSelected = selectedStops.includes(station);
+                        const isDetour = detourStops.includes(station);
                         return (
                           <button
                             key={`${lineName}-${station}`}
                             onClick={() => toggleStation(station)}
                             className={`min-h-8 rounded-md border px-2.5 py-1 text-xs font-bold transition ${
                               isSelected
-                                ? "border-sky-300 bg-sky-100 text-sky-900 shadow-sm"
+                                ? isDetour
+                                  ? "border-amber-300 bg-amber-100 text-amber-900 shadow-sm"
+                                  : "border-sky-300 bg-sky-100 text-sky-900 shadow-sm"
                                 : "bg-white/90 text-slate-700 border-white/80 hover:border-sky-300 hover:bg-sky-50"
                             }`}
                           >
@@ -409,9 +551,9 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep("mode")}
-                  disabled={selectedStops.length < 2}
+                  disabled={baseStopCount < 2}
                   className={`rounded-md px-5 py-2.5 text-sm font-bold transition ${
-                    selectedStops.length < 2
+                    baseStopCount < 2
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                       : "border border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200"
                   }`}
@@ -453,7 +595,10 @@ export default function Home() {
                 <div className="font-bold text-slate-800">選択内容</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <span className="rounded-full bg-white px-2.5 py-1 font-bold">{selectedFareLabel}</span>
-                  <span className="rounded-full bg-white px-2.5 py-1 font-bold">{selectedStops.length}駅</span>
+                  <span className="rounded-full bg-white px-2.5 py-1 font-bold">必須 {baseStopCount}駅</span>
+                  {detourStops.length > 0 && (
+                    <span className="rounded-full bg-white px-2.5 py-1 font-bold">寄り道 {detourStops.length}駅</span>
+                  )}
                   <span className="rounded-full bg-white px-2.5 py-1 font-bold">{selectedSearchMode?.label}</span>
                 </div>
               </div>
@@ -472,9 +617,9 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={handleCalculate}
-                  disabled={isLoading || selectedStops.length < 2}
+                  disabled={isLoading || baseStopCount < 2}
                   className={`flex min-w-36 items-center justify-center gap-2 rounded-md px-5 py-2.5 text-sm font-bold transition ${
-                    isLoading || selectedStops.length < 2
+                    isLoading || baseStopCount < 2
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                       : "border border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200"
                   }`}
@@ -517,6 +662,19 @@ export default function Home() {
               {warningMsg && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-center text-sm font-bold text-amber-800">{warningMsg}</div>}
               {errorMsg && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-center text-sm font-bold text-rose-700">{errorMsg}</div>}
 
+              {baseRoute && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-bold text-slate-500">遠回りしないルート（必須駅のみ・最短）</div>
+                  <div className="mt-1 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                    <div className="text-sm font-bold text-slate-800">{baseRoute.route_str}</div>
+                    <div className="text-sm font-bold text-slate-800">
+                      1ヶ月 {baseRoute.price_1m.toLocaleString()}円 / 6ヶ月 {baseRoute.price_6m.toLocaleString()}円
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-slate-500">{baseRoute.distance}km / {baseRoute.zone}</div>
+                </div>
+              )}
+
               {sortedCandidates.length === 0 && !errorMsg && (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">
                   まだ検索結果がありません。
@@ -543,6 +701,8 @@ export default function Home() {
                   </div>
 
                   <div className="mb-3 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold leading-6 text-teal-950 md:text-base">{cand.route_str}</div>
+
+                  {cand.detour_comparison && renderDetourComparison(cand.detour_comparison)}
 
                   <button
                     type="button"

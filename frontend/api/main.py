@@ -66,6 +66,29 @@ class SubwayFareCalculator:
             }),
         ]
 
+        # 普通運賃（定期区間外へ乗り越すときの運賃）。区分の距離境界は定期と同じ
+        # data source: 名古屋市交通局「地下鉄普通料金・定期券料金」
+        adult_fares = {"1区": 210, "2区": 240, "3区": 270, "4区": 310, "5区": 340}
+        # 小児、および身体障害者等割引（大人）の普通運賃
+        reduced_fares = {"1区": 100, "2区": 120, "3区": 130, "4区": 150, "5区": 170}
+        self.single_fares = {
+            "commuter":       adult_fares,
+            "university":     adult_fares,
+            "high_school":    adult_fares,
+            "elementary":     reduced_fares,
+            "disability":     reduced_fares,
+            "disability_stu": reduced_fares,
+        }
+
+    def get_single_fare(self, distance_km: float, fare_type: str):
+        dist_rounded = round(distance_km, 1)
+        if fare_type not in self.single_fares:
+            return None
+        for rule in self.fare_rules:
+            if dist_rounded <= rule.max_km:
+                return self.single_fares[fare_type][rule.zone_name]
+        return None
+
     def get_fare(self, distance_km: float, fare_type: str):
         dist_rounded = round(distance_km, 1)
         for rule in self.fare_rules:
@@ -260,6 +283,22 @@ class SubwayNetwork:
         self.add_edge("平針", "赤池", 1.1)
         # 上飯田線
         self.add_edge("上飯田", "平安通", 0.8)
+
+    def shortest_distance(self, start, goal):
+        if start not in self.graph or goal not in self.graph: return None
+        dist = {start: 0.0}
+        queue = [(0.0, start)]
+        while queue:
+            d, curr = heapq.heappop(queue)
+            if curr == goal:
+                return d
+            if d > dist[curr]: continue
+            for neighbor, weight in self.graph[curr].items():
+                nd = d + weight
+                if nd < dist.get(neighbor, float('inf')):
+                    dist[neighbor] = nd
+                    heapq.heappush(queue, (nd, neighbor))
+        return None
 
     def find_all_simple_paths(self, start, goal, exclude_stations: Set[str], max_paths=1000):
         if start not in self.graph or goal not in self.graph: return []
@@ -515,11 +554,55 @@ def find_routes_recursive(
             max_results=max_results,
         )
 
+def detour_round_trip_cost(base_path: List[str], detour_station: str, fare_type: str):
+    # 遠回りしない定期で寄り道駅へ行く場合：定期区間で一番近い駅から寄り道駅までの乗り越し運賃 × 往復
+    fares = []
+    for station in base_path:
+        distance = nw.shortest_distance(station, detour_station)
+        if distance is None:
+            continue
+        fare = calc.get_single_fare(distance, fare_type)
+        if fare is not None:
+            fares.append((fare, station))
+    if not fares:
+        return None, None
+    fare, from_station = min(fares)
+    return fare * 2, from_station
+
+def required_visits(price_diff: int, months: int, round_trip_cost: int):
+    # 遠回り定期の差額より、乗り越し運賃の合計が高くなる「月あたり」の最小回数
+    if price_diff <= 0:
+        return 0
+    return price_diff // (months * round_trip_cost) + 1
+
+def build_detour_comparison(candidate: Dict, base_route: Dict, detour_stops: List[str], fare_type: str):
+    diff_1m = candidate["price_1m"] - base_route["price_1m"]
+    diff_6m = candidate["price_6m"] - base_route["price_6m"]
+    stations = []
+    for station in detour_stops:
+        if station in base_route["full_path"]:
+            # 遠回りしない定期の区間内なので、乗り越し運賃はかからない
+            stations.append({"station": station, "on_base_route": True})
+            continue
+        cost, from_station = detour_round_trip_cost(base_route["full_path"], station, fare_type)
+        if cost is None:
+            continue
+        stations.append({
+            "station": station,
+            "on_base_route": False,
+            "from_station": from_station,
+            "round_trip_cost": cost,
+            "visits_1m": required_visits(diff_1m, 1, cost),
+            "visits_6m": required_visits(diff_6m, 6, cost),
+        })
+    return {"diff_1m": diff_1m, "diff_6m": diff_6m, "stations": stations}
+
 @app.get("/api/calculate")
 def calculate_fare(
     stops: List[str] = Query(...),
     type: str = Query("commuter"), # デフォルトは通勤
-    mode: str = Query("fast")
+    mode: str = Query("fast"),
+    detour: List[str] = Query([]) # 寄り道駅（バイト先・店など）。それ以外の駅は遠回りしないルートの必須駅
 ):
     if len(stops) < 2:
         raise HTTPException(status_code=400, detail="駅を2つ以上指定してください。")
@@ -527,6 +610,11 @@ def calculate_fare(
     unique_stops = list(dict.fromkeys(stops))
     if len(unique_stops) < 2:
         raise HTTPException(status_code=400, detail="異なる駅を2つ以上指定してください。")
+
+    detour_stops = [s for s in unique_stops if s in detour]
+    base_stops = [s for s in unique_stops if s not in detour]
+    if detour_stops and len(base_stops) < 2:
+        raise HTTPException(status_code=400, detail="家・大学などの必須駅を2つ以上指定してください。")
 
     warning = None
     if mode == "exhaustive":
@@ -548,4 +636,13 @@ def calculate_fare(
             raise HTTPException(status_code=400, detail="有効な一筆書きルートが見つかりませんでした。")
 
     valid_candidates.sort(key=lambda x: x["distance"])
-    return {"candidates": valid_candidates, "warning": warning}
+
+    base_route = None
+    if detour_stops:
+        base_candidates = find_routes_by_distance(base_stops, type, max_results=1)
+        if base_candidates:
+            base_route = base_candidates[0]
+            for candidate in valid_candidates:
+                candidate["detour_comparison"] = build_detour_comparison(candidate, base_route, detour_stops, type)
+
+    return {"candidates": valid_candidates, "warning": warning, "base_route": base_route}
