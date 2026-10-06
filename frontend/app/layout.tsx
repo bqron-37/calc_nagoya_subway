@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { Noto_Sans_JP } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next"; // ★追加 1
 import "./globals.css";
 
+const notoSansJp = Noto_Sans_JP({
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-noto-sans-jp",
+});
+
 export const metadata: Metadata = {
-  title: "地下鉄定期ルート検索",
+  title: "名古屋市営地下鉄 定期ルート計算",
   description: "名古屋市営地下鉄の定期券ルートを計算します",
 };
 
@@ -14,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" className={notoSansJp.variable}>
       <head>
         {/* AdSenseコード */}
         <Script
